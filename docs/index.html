@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // ECON CRACKER v4</title>
+<title>VEX // ECON CRACKER v5</title>
 <style>
   body{background:#0a0a0c;color:#e0e0e0;font:14px ui-monospace,monospace;padding:12px;margin:0}
   h1{font-size:16px;color:#00ffcc;margin:0 0 10px}
@@ -16,7 +16,7 @@
 </style>
 </head>
 <body>
-<h1>VEX // ECON CRACKER v4</h1>
+<h1>VEX // ECON CRACKER v5</h1>
 <div id="drop"><b>TAP HERE</b> to load Econ.txt</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
 <div id="status">waiting...</div>
@@ -51,28 +51,22 @@ function process(src){
     print(`file size: ${src.length} chars`);
     
     // --- CHECK IF IT'S A STUB ---
-    // Stubs are usually short and have loadstring(game:HttpGet(...)) in them.
     const isStub = src.length < 50000;
     if(isStub){
       print(`WARNING: This is a loader stub! (${src.length} bytes)`, true);
-      print(`The real deobfuscated script isn't here. It's downloading it from a URL.`, true);
       print(`Looking for the download URL...`);
-      
-      // try to find a URL
       const urlMatches = src.match(/https?:\/\/[^\s'"\]\)]+/g);
       if(urlMatches){
         urlMatches.forEach(u=>print(`FOUND URL: ${u}`));
-        print(`\n>> BRO: Go to the above URL in ur browser, download that file, and load IT into this tool. <<`);
+        print(`\n>> BRO: Go to the above URL, download that file, and load IT here <<`);
       } else {
-        print(`No URL found. Let me dump what's inside this file so you can see.`);
+        print(`No URL found. Dumping raw file text.`);
       }
     }
 
-    // --- TRY TO FIND C TABLE ---
     const i = src.indexOf('local C');
     if(i<0){
-      print('No "local C" table found. (Confirming it is a stub.)', true);
-      print('Dumping raw file text to download so u can inspect it:');
+      print('No "local C" table found.', true);
       downloadTxt(src, 'Econ_Dump_Raw.txt');
       return;
     }
@@ -91,7 +85,6 @@ function process(src){
     const table = src.slice(b+1,end);
     print(`extracted table (${table.length} chars)`);
 
-    // pull literals
     const lits=[]; let k=0;
     while(k<table.length){
       if(table[k]==='"'){
@@ -106,18 +99,16 @@ function process(src){
     }
     print(`found ${lits.length} string literals. decoding...`);
 
-    // decode logic
     const decoded = lits.map(decEsc);
-    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
     let outTxt = '=== VEX ECON DUMP ===\n\n';
 
     decoded.forEach((u8,idx)=>{
-      let p=printab(u8);
+      let p=toStr(u8);
       let b64=b64d(u8);
-      let pb=b64?printab(b64):null;
+      let pb=b64?toStr(b64):null;
       
-      if(p) outTxt += `[${idx}] RAW: ${p}\n`;
-      if(pb) outTxt += `[${idx}] B64: ${pb}\n`;
+      if(p && p.length > 2) outTxt += `[${idx}] RAW: ${p}\n`;
+      if(pb && pb.length > 2) outTxt += `[${idx}] B64: ${pb}\n`;
       if(!p && !pb) outTxt += `[${idx}] <unreadable bytes>\n`;
     });
 
@@ -144,13 +135,23 @@ function decEsc(lit){
   }
   return Uint8Array.from(o);
 }
+
+// FATAL FIX: Mobile browsers hate TextDecoder('latin-1'). We do it manually.
+function toStr(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i++) {
+    s += String.fromCharCode(u8[i]);
+  }
+  // check if it's printable
+  let good = 0;
+  for (let i = 0; i < u8.length; i++) {
+    if ((u8[i] >= 32 && u8[i] < 127) || u8[i] === 9 || u8[i] === 10 || u8[i] === 13) good++;
+  }
+  return (good >= u8.length * 0.75) ? s : null;
+}
+
 function b64d(u8){
   try{const s=String.fromCharCode(...u8);if(!/^[A-Za-z0-9+/=]+$/.test(s))return null;return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}catch(e){return null;}
-}
-function printab(u8){
-  if(!u8||!u8.length)return null;let g=0;
-  for(const b of u8)if((b>=32&&b<127)||b===9||b===10||b===13)g++;
-  return g>=u8.length*0.75?new TextDecoder('latin-1').decode(u8):null;
 }
 
 function downloadTxt(text, filename){
