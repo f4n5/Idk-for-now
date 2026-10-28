@@ -3,27 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // ECON VM CRACKER</title>
+<title>VEX // ECON KEY EXTRACTOR</title>
 <style>
   body{background:#0a0a0c;color:#e0e0e0;font:14px ui-monospace,monospace;padding:12px;margin:0}
   h1{font-size:16px;color:#00ffcc;margin:0 0 10px}
   #drop{border:2px dashed #333;border-radius:8px;padding:30px 10px;text-align:center;color:#888;margin-bottom:12px;cursor:pointer}
   #status{color:#00ffcc;margin-bottom:8px;font-weight:bold;min-height:16px;word-break:break-all}
   #status.error{color:#ff3366}
-  #out{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow-y:auto;font-size:12px;display:none}
+  #out{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:65vh;overflow-y:auto;font-size:12px;display:none}
   .hit{color:#ffaa00;font-weight:bold;display:block;margin:4px 0;padding:4px;background:rgba(255,170,0,.1);border-radius:3px}
   input[type=file]{display:none}
 </style>
 </head>
 <body>
-<h1>VEX // ECON VM CRACKER</h1>
+<h1>VEX // ECON KEY EXTRACTOR</h1>
 <div id="drop"><b>TAP HERE</b> to load Econ.txt</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
-<div id="status">initializing Lua VM (requires internet)...</div>
+<div id="status">waiting...</div>
 <div id="out"></div>
-
-<!-- Load Fengari (Lua VM in JS) -->
-<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 
 <script>
 const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
@@ -44,73 +41,58 @@ function log(msg,isErr){
 function load(file){
   st.textContent=`reading ${file.name}...`; out.innerHTML='';
   const r=new FileReader();
-  r.onload=e=>setTimeout(()=>execute(e.target.result),100);
+  r.onload=e=>setTimeout(()=>process(e.target.result),50);
   r.onerror=()=>log('FileReader died.',true);
   r.readAsText(file);
 }
 
-function execute(src){
-  log('File loaded. Starting Lua VM...');
-  
-  // 1. Prepare the Lua wrapper with the hook
-  const hook = `
-    local real_print = print
-    local target_strings = {}
+function process(src){
+  try{
+    log(`File size: ${src.length} chars`);
     
-    -- Hook string.char to catch decrypted strings
-    local old_char = string.char
-    string.char = function(...)
-        local s = old_char(...)
-        if #s >= 4 then
-            local low = string.lower(s)
-            if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "loadstring") or string.find(low, "webhook") or string.find(low, "init") or string.find(low, "api") then
-                real_print("JUICY_HIT: " .. s)
-            end
-        end
-        return s
-    end
+    // 1. Find the key string.
+    // Luraph usually builds a local variable right after C, e.g., local h="key_here"
+    // Let's grep the first 5000 chars for string literals that look like keys (alphanumeric, len 8-64)
+    const head = src.slice(0, 10000);
     
-    -- Hook game:HttpGet in case it tries to download a second stage
-    game = {
-        HttpGet = function(url)
-            real_print("JUICY_HIT: HTTPGET: " .. url)
-            return ""
-        end,
-        GetService = function() return {HttpGet = function() return "" end} end
+    // Look for a string that is assigned to a local var right after the table
+    // Pattern: local <name>="<key>"
+    const keyRegex = /local\s+[\w_]+\s*=\s*"([^"]{8,100})"/g;
+    let m;
+    const keys = [];
+    while((m = keyRegex.exec(head)) !== null) {
+       // Filter out decimals (the C table)
+       if (!m[1].includes('\\')) keys.push(m[1]);
     }
-    getgenv = function() return {} end
-    wait = function() end
-    task = { wait = function() end, spawn = function(f) f() end }
-    loadstring = function(s) return function() end end
 
-    -- Sandbox the actual source
-    local ok, err = pcall(function()
-        ${src}
-    end)
-    
-    if not ok then real_print("VM_ERR: " .. tostring(err)) end
-    real_print("VM_FINISHED")
-  `;
+    if(keys.length > 0){
+       log(`Found ${keys.length} potential keys in header:`);
+       keys.forEach(k => out.innerHTML += `<span class="hit">KEY CANDIDATE: ${k}</span>`);
+    } else {
+       log('No obvious key in header. Scanning whole file for local string assignments...');
+       // Just grab any local = "..." that isn't the C table
+       const wholeRegex = /local\s+[\w_]+\s*=\s*"([^"\\]{6,64})"/g;
+       let hits = 0;
+       while((m = wholeRegex.exec(src)) !== null) {
+          out.innerHTML += `<span class="hit">POSSIBLE KEY: ${m[1]}</span>`;
+          hits++;
+          if(hits > 20) break;
+       }
+       if(hits===0) log('No plaintext keys found. Might be dynamically generated.', true);
+    }
 
-  // 2. Run it through fengari
-  try {
-    // Capture Lua's print output
-    FengariWeb.set_print_fn(function(text) {
-      if (text.indexOf('JUICY_HIT:') === 0) {
-        let cleaned = text.replace('JUICY_HIT: ', '');
-        out.innerHTML += `<span class="hit">${cleaned}</span>`;
-      } else if (text === 'VM_FINISHED') {
-        log('DONE. VM finished. If hits were found, they are above.');
-      } else if (text.indexOf('VM_ERR:') === 0) {
-        log('Lua Error: ' + text, true);
-      }
-    });
+    // 2. Also dump the first 10 lines of the file after the C table to see what logic follows
+    log('Dumping header logic (just to see what it does):');
+    const afterC = src.indexOf('for h,v in ipairs');
+    if(afterC > 0){
+       let snippet = src.slice(afterC, afterC + 500);
+       out.innerHTML += `<div style="color:#888">${snippet.replace(/</g, '&lt;')}</div>`;
+    } else {
+       log('Could not find "for h,v in ipairs" block.');
+    }
 
-    // Execute the wrapped code
-    FengariWeb.run(hook);
-    
   } catch(e) {
-    log('JS CRASH: ' + e.message, true);
+    log('CRASH: '+e.message, true);
   }
 }
 </script>
