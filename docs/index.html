@@ -1,60 +1,109 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // LUA DECRYPTOR STATION</title>
+<title>VEX // DEOBFUSCATOR STATION</title>
 <style>
-  :root { --bg: #08080a; --panel: #121216; --border: #2a2a35; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; }
-  body { background: var(--bg); color: var(--txt); font: 14px/1.5 ui-monospace, monospace; padding: 16px; margin: 0; }
-  h1 { font-size: 18px; color: var(--acc); margin: 0 0 16px 0; text-transform: uppercase; letter-spacing: 2px; text-shadow: 0 0 10px rgba(0,255,204,0.3); }
-  #drop { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; text-align: center; color: #888; margin-bottom: 16px; cursor: pointer; transition: all 0.3s; background: var(--panel); }
-  #drop:hover, #drop.hot { border-color: var(--acc); color: var(--acc); background: rgba(0,255,204,0.05); box-shadow: 0 0 20px rgba(0,255,204,0.1); }
-  #status { color: var(--acc); margin-bottom: 12px; font-weight: bold; min-height: 20px; text-shadow: 0 0 5px rgba(0,255,204,0.5); }
-  #status.err { color: var(--err); text-shadow: 0 0 5px rgba(255,51,102,0.5); }
-  #out { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 16px; white-space: pre-wrap; word-break: break-all; max-height: 60vh; overflow-y: auto; font-size: 13px; display: none; box-shadow: inset 0 0 20px rgba(0,0,0,0.8); }
-  .hit { color: var(--warn); font-weight: bold; display: block; margin: 6px 0; padding: 8px; background: rgba(255,170,0,0.05); border-left: 3px solid var(--warn); border-radius: 4px; }
-  .str { color: var(--acc); display: block; padding: 2px 0; }
-  .idx { color: #555; font-size: 11px; margin-right: 8px; }
+  :root { --bg: #050508; --panel: #0d0d12; --border: #1f1f2a; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; --blue: #00aaff; }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--txt); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 16px; margin: 0; overflow-x: hidden; }
+  
+  /* Animations */
+  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes glow { 0% { box-shadow: 0 0 5px var(--acc); } 50% { box-shadow: 0 0 20px var(--acc); } 100% { box-shadow: 0 0 5px var(--acc); } }
+  
+  h1 { font-size: 20px; color: var(--acc); margin: 0 0 20px 0; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 10px rgba(0,255,204,0.4); display: flex; align-items: center; gap: 10px; }
+  h1::before { content: ''; display: inline-block; width: 12px; height: 12px; background: var(--acc); border-radius: 50%; animation: pulse 2s infinite; }
+  
+  #drop { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; text-align: center; color: #888; margin-bottom: 20px; cursor: pointer; transition: all 0.3s; background: var(--panel); }
+  #drop:hover, #drop.hot { border-color: var(--acc); color: var(--acc); background: rgba(0,255,204,0.05); box-shadow: 0 0 30px rgba(0,255,204,0.1); transform: scale(1.01); }
+  
+  .status-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+  .status-indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--acc); animation: pulse 1s infinite; }
+  .status-indicator.err { background: var(--err); animation: none; }
+  #status { color: var(--acc); font-weight: bold; font-size: 13px; }
+  
+  .badges { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .badge { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 1px solid transparent; }
+  .badge.luraph { background: rgba(74,0,224,0.2); color: #a07aff; border-color: #4a00e0; }
+  .badge.ironbrew { background: rgba(230,92,0,0.2); color: #ff9e5c; border-color: #e65c00; }
+  .badge.moonsec { background: rgba(0,170,255,0.2); color: #5cd6ff; border-color: #00aaff; }
+  .badge.unknown { background: rgba(255,51,102,0.2); color: #ff7099; border-color: #ff3366; }
+  
+  .results { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 16px; white-space: pre-wrap; word-break: break-all; max-height: 65vh; overflow-y: auto; font-size: 13px; display: none; box-shadow: inset 0 0 30px rgba(0,0,0,0.9); }
+  
+  .hit { color: var(--warn); font-weight: bold; display: block; margin: 6px 0; padding: 10px; background: rgba(255,170,0,0.05); border-left: 3px solid var(--warn); border-radius: 4px; animation: slideIn 0.3s ease-out; }
+  .hit .label { font-size: 10px; color: #888; margin-right: 8px; text-transform: uppercase; background: #222; padding: 2px 4px; border-radius: 2px; }
+  
+  .str { color: var(--txt); display: block; padding: 3px 0; border-bottom: 1px solid #111; }
+  .str:hover { background: #111; }
+  .idx { color: #555; font-size: 11px; margin-right: 10px; user-select: none; }
+  .blue { color: var(--blue); }
+  
   input[type=file]{ display: none; }
-  .tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-bottom: 8px; text-transform: uppercase; }
-  .tag.luraph { background: #4a00e0; color: #fff; }
-  .tag.ironbrew { background: #e65c00; color: #fff; }
+  
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: #000; }
+  ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--acc); }
 </style>
 </head>
 <body>
-<h1>VEX // LUA DECRYPTOR STATION</h1>
-<div id="drop"><b>TAP HERE</b> to load the script<br><small>Drag & Drop supported on PC</small></div>
+
+<h1>VEX // DEOBFUSCATOR</h1>
+
+<div id="drop">
+  <b>TAP HERE</b> to load target<br>
+  <small>desktop: drag & drop</small>
+</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
-<div id="status">waiting for target...</div>
-<div id="out"></div>
+
+<div class="status-bar">
+  <div class="status-indicator" id="indicator"></div>
+  <div id="status">waiting for target...</div>
+</div>
+
+<div class="badges" id="badges"></div>
+<div class="results" id="out"></div>
 
 <script>
-const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
-      st=document.getElementById('status'),out=document.getElementById('out');
+const drop = document.getElementById('drop'),
+      fi = document.getElementById('fileInput'),
+      st = document.getElementById('status'),
+      ind = document.getElementById('indicator'),
+      out = document.getElementById('out'),
+      badges = document.getElementById('badges');
 
-drop.onclick=()=>fi.click();
-['dragover','dragenter'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hot')}));
-['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hot')}));
-drop.addEventListener('drop',e=>{ if(e.dataTransfer.files.length)load(e.dataTransfer.files[0]); });
-fi.onchange=e=>{ if(e.target.files.length)load(e.target.files[0]); };
+drop.onclick = () => fi.click();
+['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
+drop.addEventListener('drop', e => { if(e.dataTransfer.files.length) load(e.dataTransfer.files[0]); });
+fi.onchange = e => { if(e.target.files.length) load(e.target.files[0]); };
 
-function log(msg,isErr){
-  out.style.display='block';
-  out.innerHTML += `<div style="color:${isErr?'var(--err)':'var(--acc)'}; margin-bottom:4px;">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
-  st.textContent=msg;
-  if(isErr) st.className='err'; else st.className='';
+function log(msg, isErr) {
+  out.style.display = 'block';
+  st.textContent = msg;
+  if(isErr) { st.style.color = 'var(--err)'; ind.classList.add('err'); }
+  else { st.style.color = 'var(--acc)'; ind.classList.remove('err'); }
 }
 
-function load(file){
-  st.textContent=`reading ${file.name}...`; out.innerHTML='';
-  const r=new FileReader();
-  r.onload=e=>setTimeout(()=>process(e.target.result),50);
-  r.onerror=()=>log('FileReader died.',true);
+function addBadge(text, type) {
+  badges.innerHTML += `<div class="badge ${type}">${text}</div>`;
+}
+
+function load(file) {
+  st.textContent = `reading ${file.name}...`;
+  out.innerHTML = ''; badges.innerHTML = '';
+  const r = new FileReader();
+  r.onload = e => setTimeout(() => process(e.target.result), 100);
+  r.onerror = () => log('FileReader died.', true);
   r.readAsText(file);
 }
 
-// Lua decimal escape decoder
+// --- CORE LOGIC ---
+
 function decEsc(lit){
   const o=[];let i=0;
   while(i<lit.length){
@@ -70,99 +119,92 @@ function decEsc(lit){
   return Uint8Array.from(o);
 }
 
-function b64decode(u8){
-  try{
-    let s=String.fromCharCode(...u8);
-    // Luraph uses standard base64, but sometimes the padding is messed up
-    if(!/^[A-Za-z0-9+/=]+$/.test(s)) return null;
-    let pad = s.length % 4;
-    if(pad) s += '='.repeat(4-pad);
-    return Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-  }catch(e){ return null; }
-}
-
 function toStr(u8) {
   let s = '';
   for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  let good = 0;
-  for (let i = 0; i < u8.length; i++) {
-    if ((u8[i] >= 32 && u8[i] < 127) || u8[i] === 9 || u8[i] === 10 || u8[i] === 13) good++;
-  }
-  return (good >= u8.length * 0.75) ? s : null;
+  return s;
 }
 
 function process(src){
-  try{
+  try {
     log(`Target loaded: ${src.length} bytes`);
     
-    // Detect Obfuscator
-    if(src.includes('Luraph') || src.includes('LPH')) log('Detected: Luraph');
-    else if(src.includes('IronBrew') || src.includes('IB2')) log('Detected: IronBrew');
+    // 1. Detect Obfuscator
+    let isLuraph = src.includes('Luraph') || src.includes('LPH') || src.includes('lph');
+    let isIronBrew = src.includes('IronBrew') || src.includes('IB2');
+    let isMoonSec = src.includes('MoonSec') || src.includes('MSV');
+    
+    if(isLuraph) addBadge('Luraph', 'luraph');
+    else if(isIronBrew) addBadge('IronBrew', 'ironbrew');
+    else if(isMoonSec) addBadge('MoonSec', 'moonsec');
+    else addBadge('Unknown/Custom', 'unknown');
 
-    // 1. Extract C table
+    // 2. Extract C Table
     const i = src.indexOf('local C');
-    if(i<0) throw new Error('No "local C" table found.');
+    if(i < 0) throw new Error('No "local C" table found. Header cut?');
     let b = src.indexOf('{', i);
-    let depth=0, end=-1;
-    for(let j=b;j<src.length;j++){
-      const c=src[j];
-      if(c==='{')depth++;
-      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
-      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
+    let depth = 0, end = -1;
+    for(let j = b; j < src.length; j++){
+      const c = src[j];
+      if(c === '{') depth++;
+      else if(c === '}'){ depth--; if(depth === 0){ end = j; break; } }
+      else if(c === '"'){ j++; while(j < src.length){ if(src[j]==='\\') j+=2; else if(src[j]==='"') break; else j++; } }
     }
-    if(end<0) throw new Error('unbalanced braces in C table');
+    if(end < 0) throw new Error('Unbalanced braces in C table');
 
-    const table = src.slice(b+1,end);
-    const lits=[]; let k=0;
-    while(k<table.length){
-      if(table[k]==='"'){
-        let j=k+1, buf='';
-        while(j<table.length){
-          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
-          if(table[j]==='"')break;
-          buf+=table[j];j++;
+    const table = src.slice(b+1, end);
+    const lits = []; let k = 0;
+    while(k < table.length){
+      if(table[k] === '"'){
+        let j = k+1, buf = '';
+        while(j < table.length){
+          if(table[j] === '\\'){ buf += table[j] + table[j+1]; j += 2; continue; }
+          if(table[j] === '"') break;
+          buf += table[j]; j++;
         }
-        lits.push(buf); k=j+1;
+        lits.push(buf); k = j+1;
       } else k++;
     }
+    
+    log(`Extracted ${lits.length} encrypted strings. Decoding...`);
 
     let C = lits.map(decEsc);
-    log(`Extracted ${C.length} encrypted string literals.`);
+    let hits = 0, others = 0;
+    let outHtml = '';
 
-    // 2. Extract P table (the decryption dictionary)
-    // Luraph uses a custom base 85-ish decoder with the P table.
-    // But sometimes, standard base64 works if we find the correct offset.
-    // Let's try base64 first, then fallback to brute-forcing the P table.
-    
-    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
-    let hits = 0;
-    let decodedCount = 0;
+    const juicy = /https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
 
-    // Try decoding
+    // 3. Decode
     C.forEach((u8, idx) => {
+      // Raw
       let rawStr = toStr(u8);
-      let b64 = b64decode(u8);
-      let b64Str = b64 ? toStr(b64) : null;
+      // Base64 attempt
+      let b64Str = null;
+      try {
+        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
+        while(s.length % 4) s += '=';
+        b64Str = atob(s);
+      } catch(e) {}
 
-      if (b64Str && juicy.test(b64Str)) {
-        out.innerHTML += `<span class="hit"><span class="idx">[${idx}]</span> B64 DECRYPT: ${b64Str}</span>`;
+      // Check hits
+      if (juicy.test(rawStr)) {
+        outHtml += `<span class="hit"><span class="label">RAW</span>[${idx}] ${rawStr}</span>`;
         hits++;
-      } else if (rawStr && juicy.test(rawStr)) {
-        out.innerHTML += `<span class="hit"><span class="idx">[${idx}]</span> RAW DECRYPT: ${rawStr}</span>`;
+      } else if (b64Str && juicy.test(b64Str)) {
+        outHtml += `<span class="hit"><span class="label">B64</span>[${idx}] ${b64Str}</span>`;
         hits++;
-      } else if (b64Str) {
-        decodedCount++;
-        out.innerHTML += `<span class="str"><span class="idx">[${idx}]</span> ${b64Str}</span>`;
+      } else if (b64Str && b64Str.length > 3) {
+        outHtml += `<span class="str"><span class="idx">[${idx}]</span> <span class="blue">${b64Str}</span></span>`;
+        others++;
       }
     });
 
-    log(`DONE. Found ${hits} juicy hits. Decoded ${decodedCount} strings total.`);
-    if(hits === 0) {
-        log(`WARNING: No URLs or keys found. Luraph might be using a custom P-table dictionary (Char Map).`, true);
-    }
+    // Render
+    out.innerHTML = outHtml || '<div style="color:#888">No readable strings found. VM emulation required.</div>';
+    log(`DONE. ${hits} juicy hits, ${others} decoded strings.`);
 
   } catch(e) {
-    log('CRASH: '+e.message, true);
+    log('CRASH: ' + e.message, true);
   }
 }
 </script>
