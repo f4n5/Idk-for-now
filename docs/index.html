@@ -315,6 +315,67 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
   let finalSource = "";
   let chainDepthReached = 0;
 
+
+  function stripBomAndNoise(s) {
+    if (s == null) return "";
+    if (typeof s !== "string") s = String(s);
+    // UTF-8 BOM as characters / code units
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    // UTF-8 BOM decoded as latin1 three bytes EF BB BF
+    if (s.length >= 3 &&
+        s.charCodeAt(0) === 0xEF &&
+        s.charCodeAt(1) === 0xBB &&
+        s.charCodeAt(2) === 0xBF) {
+      s = s.slice(3);
+    }
+    // UTF-8 BOM mis-decoded forms sometimes seen: ï»¿
+    if (s.charCodeAt(0) === 0xC3 && s.length >= 2) {
+      // leave general utf8 alone; only strip classic BOM patterns above
+    }
+    // strip leading ZELs / nulls / other BOM-ish
+    let i = 0;
+    while (i < s.length) {
+      const c = s.charCodeAt(i);
+      if (c === 0 || c === 0xFEFF || c === 0xFFFE) { i++; continue; }
+      break;
+    }
+    if (i) s = s.slice(i);
+    // if payload is raw byte string with high bytes at front, try to drop a short prefix of non-printables
+    i = 0;
+    while (i < Math.min(8, s.length)) {
+      const c = s.charCodeAt(i);
+      // allow tab/lf/cr and space+
+      if (c === 9 || c === 10 || c === 13 || (c >= 32 && c < 127)) break;
+      if (c >= 127) { i++; continue; }
+      break;
+    }
+    if (i > 0 && i < 8) s = s.slice(i);
+    return s;
+  }
+
+  function payloadPreview(s, n) {
+    n = n || 100;
+    if (!s) return "(empty)";
+    const head = s.slice(0, n);
+    // make control chars visible
+    return head.replace(/[\0-\x08\x0b\x0c\x0e-\x1f\x7f]/g, function(ch) {
+      return "\\x" + ch.charCodeAt(0).toString(16).padStart(2, "0");
+    });
+  }
+
+  function looksLikeLuaSource(s) {
+    if (!s || s.length < 8) return false;
+    // reject if mostly non-printable
+    let printable = 0;
+    const limit = Math.min(s.length, 400);
+    for (let i = 0; i < limit; i++) {
+      const c = s.charCodeAt(i);
+      if ((c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13) printable++;
+    }
+    if (printable / limit < 0.7) return false;
+    return /\b(local|function|return|end|then|if|for|while|do|game|loadstring|getgenv)\b/.test(s.slice(0, 2000));
+  }
+
   function looksLikeFinalSource(s) {
     if (!s || typeof s !== "string") return false;
     if (s.length < 40) return false;
@@ -354,6 +415,12 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
   function runOneStage(src, stage, opts) {
     opts = opts || {};
     const maxDepth = opts.maxDepth || 5;
+    src = stripBomAndNoise(src);
+    log("[STAGE " + stage + "] payload head: " + payloadPreview(src, 100), "info");
+    if (!src || !src.length) {
+      log("[STAGE " + stage + "] empty payload after sanitize", "err");
+      return { ok: false, captures: [], loadstrings: [], error: "empty" };
+    }
     const session = createVMSession();
     if (!session) {
       log("Fengari not loaded (offline bundle missing).", "err");
@@ -428,16 +495,21 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       const line = parts.join("\t");
       // intercept control tags
       if (line.indexOf("__CAP_LOADSTRING__") === 0) {
-        const payload = line.slice(18);
+        let payload = stripBomAndNoise(line.slice(18));
         if (payload && payload.length >= 8) {
           loadstrings.push(payload);
           capture(payload, "loadstring");
+          log("[STAGE " + stage + "] loadstring head: " + payloadPreview(payload, 100), "info");
         }
         return 0;
       }
       if (line.indexOf("__CAP_CHAR__") === 0) { capture(line.slice(12), "char"); return 0; }
       if (line.indexOf("__CAP_CONCAT__") === 0) { capture(line.slice(14), "concat"); return 0; }
       if (line.indexOf("__CAP_GSUB__") === 0) { capture(line.slice(12), "gsub"); return 0; }
+      if (line.indexOf("__CAP_PREVIEW__") === 0) {
+        log("[STAGE " + stage + "] lua-side head: " + payloadPreview(line.slice(16), 100), "info");
+        return 0;
+      }
       if (line.indexOf("__CAP_HTTP__") === 0) { capture(line.slice(12), "http"); return 0; }
       if (line.indexOf("__CAP_KICK__") === 0) { capture(line.slice(12) || "(kick)", "kick"); return 0; }
       if (line.indexOf("__CAP_CLIP__") === 0) { capture(line.slice(12), "clipboard"); return 0; }
@@ -971,10 +1043,38 @@ local __real_load = loadstring or load
 
 -- Public loadstring: capture + return a function that executes the chunk under pcall.
 -- Never throws into the host; chain driver reads __CAP_LOADSTRING__ payloads.
+-- sanitize: strip UTF-8 BOM / leading junk so Lua 5.1 load won't choke
+local function __strip_bom(s)
+  if type(s) ~= "string" then return s end
+  -- UTF-8 BOM bytes as a lua string
+  if s:byte(1) == 0xEF and s:byte(2) == 0xBB and s:byte(3) == 0xBF then
+    s = s:sub(4)
+  end
+  -- Unicode BOM as single char (if present)
+  if s:byte(1) == 0xFE or s:byte(1) == 0xFF then
+    -- utf16 BOM leftovers — drop first char
+    s = s:sub(2)
+  end
+  -- drop leading NULs
+  local i = 1
+  while i <= #s and s:byte(i) == 0 do i = i + 1 end
+  if i > 1 then s = s:sub(i) end
+  -- drop a short run of leading bytes >= 128 (mojibake BOM leftovers)
+  i = 1
+  while i <= math.min(8, #s) do
+    local b = s:byte(i)
+    if b == 9 or b == 10 or b == 13 or (b >= 32 and b < 127) then break end
+    if b >= 128 then i = i + 1 else break end
+  end
+  if i > 1 and i <= 8 then s = s:sub(i) end
+  return s
+end
+
 loadstring = function(code, chunkname)
   if type(code) ~= "string" then
     return nil, "loadstring expects string"
   end
+  code = __strip_bom(code)
   if #code >= 8 then
     -- emit full payload for the auto-chain (not truncated)
     print("__CAP_LOADSTRING__" .. code)
@@ -1000,8 +1100,9 @@ end
 load = loadstring
 
 -- run target stage
-local src = __SRC
+local src = __strip_bom(__SRC)
 __SRC = nil
+print("__CAP_PREVIEW__" .. tostring(src and src:sub(1, 100) or ""))
 local fn, err = __real_load(src, "@stage" .. tostring(__STAGE_NUM__))
 if not fn then
   print("__VM_ERROR__compile: " .. tostring(err))
@@ -1032,6 +1133,8 @@ print("__VM_FINISHED__")
     // pick best next payload: longest loadstring capture that still looks opaque or is final
     let nextPayload = null;
     if (loadstrings.length) {
+      // sanitize all
+      for (let i = 0; i < loadstrings.length; i++) loadstrings[i] = stripBomAndNoise(loadstrings[i]);
       // prefer longest
       loadstrings.sort((a, b) => b.length - a.length);
       nextPayload = loadstrings[0];
@@ -1177,7 +1280,7 @@ print("__VM_FINISHED__")
       log("hit max depth (" + maxDepth + ") — stopping", "info");
     }
 
-    finalSource = lastFinal || current || "";
+    finalSource = stripBomAndNoise(lastFinal || current || "");
     if (finalSource && finalSource !== src) {
       // ensure final source is in results
       const already = results.some(r => r.str === finalSource);
