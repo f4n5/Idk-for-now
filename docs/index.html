@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // ECON CRACKER v6</title>
+<title>VEX // ECON CRACKER FINAL</title>
 <style>
   body{background:#0a0a0c;color:#e0e0e0;font:14px ui-monospace,monospace;padding:12px;margin:0}
   h1{font-size:16px;color:#00ffcc;margin:0 0 10px}
   #drop{border:2px dashed #333;border-radius:8px;padding:30px 10px;text-align:center;color:#888;margin-bottom:12px;cursor:pointer}
-  #drop.hot{border-color:#00ffcc;color:#00ffcc;background:rgba(0,255,204,.05)}
   #status{color:#00ffcc;margin-bottom:8px;font-weight:bold;min-height:16px;word-break:break-all}
   #status.error{color:#ff3366}
   #out{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto;font-size:12px;display:none}
   .hit{color:#ffaa00;font-weight:bold;display:block;margin:4px 0;padding:4px;background:rgba(255,170,0,.1);border-radius:3px}
+  .url{color:#00ffcc;font-weight:bold;font-size:14px;background:rgba(0,255,204,.1);padding:6px;border-radius:4px;margin:8px 0;display:block}
   input[type=file]{display:none}
 </style>
 </head>
 <body>
-<h1>VEX // ECON CRACKER v6</h1>
+<h1>VEX // ECON CRACKER FINAL</h1>
 <div id="drop"><b>TAP HERE</b> to load Econ.txt</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
 <div id="status">waiting...</div>
@@ -49,15 +49,9 @@ function load(file){
 
 function process(src){
   try{
-    log(`file size: ${src.length} chars`);
-    
+    // 1. Extract table
     const i = src.indexOf('local C');
-    if(i<0){
-      log('No "local C" table found.', true);
-      return;
-    }
-
-    log('found table. scanning...');
+    if(i<0) throw new Error('No "local C" table found.');
     let b = src.indexOf('{', i);
     let depth=0, end=-1;
     for(let j=b;j<src.length;j++){
@@ -66,11 +60,9 @@ function process(src){
       else if(c==='}'){depth--;if(depth===0){end=j;break;}}
       else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
     }
-    if(end<0) throw new Error('unbalanced braces — file cut off');
+    if(end<0) throw new Error('unbalanced braces');
 
     const table = src.slice(b+1,end);
-    log(`extracted table (${table.length} chars)`);
-
     const lits=[]; let k=0;
     while(k<table.length){
       if(table[k]==='"'){
@@ -83,33 +75,78 @@ function process(src){
         lits.push(buf); k=j+1;
       } else k++;
     }
-    log(`found ${lits.length} strings. searching for juice...`);
 
-    const decoded = lits.map(decEsc);
+    let C = lits.map(decEsc);
+
+    // 2. Extract shuffle triples
+    // Find the block: for h,v in ipairs({{...}})
+    const triMatch = /for\s+h,v\s+in\s+ipairs\(\{(.*?)\}\)\s*do/s.exec(src);
+    if(!triMatch) throw new Error("Could not find shuffle loop.");
+    
+    // parse {num+-num-num} etc
+    const triRaw = triMatch[1];
+    const tris = [];
+    // Match all {a,b,c} or {a;b;c}
+    const blockRe = /\{([^{}]+)\}/g;
+    let m;
+    while((m = blockRe.exec(triRaw)) !== null) {
+      const parts = m[1].split(/[;,]/);
+      if(parts.length >= 3) {
+        // eval safely because it's pure math
+        const vals = parts.map(p => {
+          try { return eval(p); } catch(e) { return 0; }
+        });
+        if(vals.length >= 3) tris.push([vals[0], vals[1], vals[2]]);
+      }
+    }
+
+    log(`Extracted ${C.length} strings, ${tris.length} shuffle operations.`);
+
+    // 3. Port the shuffle
+    // Lua 1-index: C[v0],C[v1],v0,v1 = C[v1],C[v2],v0+1,v1-1 while v0<v1
+    // JS 0-index: 
+    for(let i=0; i<tris.length; i++) {
+      let v0 = tris[i][0] - 1;
+      let v1 = tris[i][1] - 1;
+      const v2 = tris[i][2] - 1;
+      
+      while(v0 < v1) {
+        if(v0 >= 0 && v0 < C.length && v1 >= 0 && v1 < C.length && v2 >= 0 && v2 < C.length) {
+           let tmp = C[v1]; C[v1] = C[v0]; C[v0] = tmp;
+           v0++;
+           v1--;
+        } else break;
+      }
+    }
+
+    // 4. After shuffle, run the decryption pass
+    // In the lua, after shuffle, it does base64 decode via string.char etc.
+    // If it's still scrambled, this will show us what the first few look like.
+    
     const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
     let hits = 0;
 
-    decoded.forEach((u8,idx)=>{
-      let p=toStr(u8);
-      let b64=b64d(u8);
-      let pb=b64?toStr(b64):null;
+    C.forEach((u8,idx)=>{
+      let p = toStr(u8);
+      let b64 = b64d(u8);
+      let pb = b64 ? toStr(b64) : null;
       
-      // If raw is juicy, print it
-      if(p && juicy.test(p)) {
-        out.innerHTML += `<span class="hit">[${idx}] RAW: ${p}</span>`;
-        hits++;
-      }
-      // If b64 is juicy, print it
-      if(pb && juicy.test(pb)) {
-        out.innerHTML += `<span class="hit">[${idx}] B64: ${pb}</span>`;
-        hits++;
-      }
+      // check hits
+      if(p && juicy.test(p)) { out.innerHTML += `<span class="hit">[${idx}] RAW: ${p}</span>`; hits++; }
+      if(pb && juicy.test(pb)) { out.innerHTML += `<span class="hit">[${idx}] B64: ${pb}</span>`; hits++; }
     });
 
-    if(hits === 0) log('No juicy hits found. The strings might be scrambled with Luraph VM logic.', true);
-    else log(`DONE. Found ${hits} juicy hits above.`);
+    // Also dump the first 5 strings just so we can see if we are getting readable text
+    log("First 5 shuffled strings:");
+    for(let i=0; i<5; i++) {
+      let p = toStr(C[i]) || "(unreadable)";
+      out.innerHTML += `<span>[${i}] ${p}</span>`;
+    }
 
-  }catch(e){
+    if(hits === 0) log('No juicy hits found. Luraph uses custom decryption logic.', true);
+    else log(`DONE. Found ${hits} hits above.`);
+
+  } catch(e) {
     log('CRASH: '+e.message, true);
   }
 }
