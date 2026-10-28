@@ -439,6 +439,8 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       if (line.indexOf("__CAP_CONCAT__") === 0) { capture(line.slice(14), "concat"); return 0; }
       if (line.indexOf("__CAP_GSUB__") === 0) { capture(line.slice(12), "gsub"); return 0; }
       if (line.indexOf("__CAP_HTTP__") === 0) { capture(line.slice(12), "http"); return 0; }
+      if (line.indexOf("__CAP_KICK__") === 0) { capture(line.slice(12) || "(kick)", "kick"); return 0; }
+      if (line.indexOf("__CAP_CLIP__") === 0) { capture(line.slice(12), "clipboard"); return 0; }
       if (line.indexOf("__VM_ERROR__") === 0) {
         log("[STAGE " + stage + "] Lua error: " + line.slice(12), "err");
         return 0;
@@ -485,48 +487,484 @@ string.gsub = function(s, pat, repl, n)
   return out, c
 end
 
-game = game or {}
-local function http_sink(url)
+
+-- ========== Universal Fallback Mock System ==========
+local function __cap_http(url)
   print("__CAP_HTTP__" .. tostring(url))
   return "--http-stub--"
 end
-game.HttpGet = http_sink
-game.HttpGetAsync = http_sink
-game.GetService = function(name)
-  return {
-    HttpGet = http_sink,
-    GetAsync = http_sink,
-    RequestAsync = function(opts)
-      if type(opts) == "table" and opts.Url then print("__CAP_HTTP__" .. tostring(opts.Url)) end
-      return { Success = true, Body = "--http-stub--", StatusCode = 200 }
-    end
-  }
-end
-game.Players = { LocalPlayer = { Name = "Player", UserId = 1 } }
 
+local function __deep_proxy(label)
+  label = label or "proxy"
+  local obj = {}
+  local mt
+  mt = {
+    __index = function(t, k)
+      if type(k) ~= "string" then return nil end
+      -- common data fields
+      if k == "Name" then return label end
+      if k == "ClassName" then return label end
+      if k == "Parent" then return t end
+      if k == "UserId" then return 1 end
+      if k == "UserID" then return 1 end
+      if k == "AccountAge" then return 100 end
+      if k == "Character" then
+        local char = __deep_proxy("Character")
+        rawset(t, "Character", char)
+        return char
+      end
+      if k == "PrimaryPart" then
+        local pp = __deep_proxy("PrimaryPart")
+        rawset(t, "PrimaryPart", pp)
+        return pp
+      end
+      if k == "CurrentCamera" then
+        local cam = __deep_proxy("CurrentCamera")
+        rawset(t, "CurrentCamera", cam)
+        return cam
+      end
+      if k == "LocalPlayer" then
+        return t._LocalPlayer
+      end
+      if k == "Players" then return t end
+      if k == "Workspace" or k == "workspace" then return t end
+      -- method fallback: always return a callable that won't nil-error
+      local fn = function(self, ...)
+        local args = {...}
+        -- capture interesting calls
+        if k == "Kick" then
+          print("__CAP_KICK__" .. tostring(args[1] or ""))
+          return nil
+        end
+        if k == "HttpGet" or k == "HttpGetAsync" or k == "GetAsync" then
+          return __cap_http(args[1])
+        end
+        if k == "RequestAsync" or k == "Request" then
+          local opts = args[1]
+          if type(opts) == "table" and opts.Url then __cap_http(opts.Url) end
+          return { Success = true, Body = "--http-stub--", StatusCode = 200, Headers = {} }
+        end
+        if k == "JSONDecode" then
+          local s = args[1]
+          if type(s) == "string" then
+            if s:match("^%s*{") then return {} end
+            if s:match("^%s*%[") then return {} end
+            return s
+          end
+          return {}
+        end
+        if k == "JSONEncode" then
+          return "{}"
+        end
+        if k == "GenerateGUID" then
+          return "00000000-0000-0000-0000-000000000000"
+        end
+        if k == "WaitForChild" or k == "FindFirstChild" or k == "FindFirstChildOfClass"
+          or k == "FindFirstChildWhichIsA" or k == "FindFirstAncestor" then
+          local child = __deep_proxy(tostring(args[1] or k))
+          return child
+        end
+        if k == "GetChildren" or k == "GetDescendants" then
+          return {}
+        end
+        if k == "GetMouse" then
+          return __deep_proxy("Mouse")
+        end
+        if k == "GetJoinData" then
+          return { SourcePlaceId = 0, ReferredByPlayerId = 0, LaunchData = "" }
+        end
+        if k == "GetRankInGroup" or k == "GetRoleInGroup" or k == "IsInGroup" then
+          return 0
+        end
+        if k == "IsFriendsWith" or k == "IsBlocked" then return false end
+        if k == "GetPlayers" then
+          return { t._LocalPlayer or t }
+        end
+        if k == "Raycast" or k == "FindPartOnRay" or k == "FindPartOnRayWithIgnoreList"
+          or k == "FindPartOnRayWithWhitelist" then
+          return nil
+        end
+        if k == "Connect" or k == "Once" or k == "connect" then
+          return { Disconnect = function() end, disconnect = function() end }
+        end
+        if k == "Fire" or k == "FireServer" or k == "InvokeServer" or k == "FireClient"
+          or k == "FireAllClients" or k == "InvokeClient" then
+          return nil
+        end
+        if k == "Clone" or k == "Destroy" or k == "destroy" or k == "Remove" or k == "ClearAllChildren" then
+          return nil
+        end
+        if k == "GetFullName" then return label end
+        if k == "IsA" then return true end
+        if k == "IsDescendantOf" or k == "IsAncestorOf" then return false end
+        if k == "GetAttribute" then return nil end
+        if k == "SetAttribute" then return nil end
+        if k == "GetPropertyChangedSignal" or k == "GetAttributeChangedSignal" then
+          return { Connect = function() return { Disconnect = function() end } end }
+        end
+        if k == "Shutdown" then return nil end
+        -- default: return another proxy so chaining never hits nil
+        return __deep_proxy(label .. "." .. k)
+      end
+      -- also stash so repeated access is stable
+      rawset(t, k, fn)
+      return fn
+    end,
+    __newindex = function(t, k, v)
+      rawset(t, k, v)
+    end,
+    __call = function(t, ...)
+      return __deep_proxy(label .. "()")
+    end,
+    __tostring = function() return label end,
+  }
+  return setmetatable(obj, mt)
+end
+
+local LocalPlayer = __deep_proxy("LocalPlayer")
+LocalPlayer.Name = "Player"
+LocalPlayer.DisplayName = "Player"
+LocalPlayer.UserId = 1
+LocalPlayer.AccountAge = 100
+LocalPlayer.Character = __deep_proxy("Character")
+LocalPlayer.Team = nil
+LocalPlayer.Neutral = true
+LocalPlayer.Parent = nil
+function LocalPlayer:Kick(reason)
+  print("__CAP_KICK__" .. tostring(reason or ""))
+end
+function LocalPlayer:WaitForChild(name, timeout)
+  return __deep_proxy(tostring(name or "Child"))
+end
+function LocalPlayer:FindFirstChild(name)
+  return __deep_proxy(tostring(name or "Child"))
+end
+function LocalPlayer:GetMouse()
+  return __deep_proxy("Mouse")
+end
+function LocalPlayer:GetJoinData()
+  return { SourcePlaceId = 0, ReferredByPlayerId = 0, LaunchData = "" }
+end
+function LocalPlayer:GetRankInGroup(id) return 0 end
+function LocalPlayer:GetRoleInGroup(id) return "Guest" end
+function LocalPlayer:IsInGroup(id) return false end
+
+local Players = __deep_proxy("Players")
+Players.LocalPlayer = LocalPlayer
+Players._LocalPlayer = LocalPlayer
+function Players:GetPlayers() return { LocalPlayer } end
+function Players:GetPlayerByUserId(id) return LocalPlayer end
+function Players:FindFirstChild(name)
+  if name == "LocalPlayer" or name == LocalPlayer.Name then return LocalPlayer end
+  return __deep_proxy(tostring(name))
+end
+function Players:WaitForChild(name)
+  return Players:FindFirstChild(name)
+end
+
+local Workspace = __deep_proxy("Workspace")
+Workspace.CurrentCamera = __deep_proxy("CurrentCamera")
+Workspace.Gravity = 196.2
+function Workspace:FindPartOnRay() return nil end
+function Workspace:FindPartOnRayWithIgnoreList() return nil end
+function Workspace:Raycast() return nil end
+function Workspace:GetChildren() return {} end
+function Workspace:WaitForChild(name) return __deep_proxy(tostring(name or "Child")) end
+function Workspace:FindFirstChild(name) return __deep_proxy(tostring(name or "Child")) end
+
+local HttpService = __deep_proxy("HttpService")
+function HttpService:HttpGet(url) return __cap_http(url) end
+function HttpService:HttpGetAsync(url) return __cap_http(url) end
+function HttpService:GetAsync(url) return __cap_http(url) end
+function HttpService:RequestAsync(opts)
+  if type(opts) == "table" and opts.Url then __cap_http(opts.Url) end
+  return { Success = true, Body = "--http-stub--", StatusCode = 200, Headers = {} }
+end
+function HttpService:JSONDecode(s)
+  if type(s) == "string" then
+    if s:match("^%s*{") then return {} end
+    if s:match("^%s*%[") then return {} end
+  end
+  return {}
+end
+function HttpService:JSONEncode(v) return "{}" end
+function HttpService:GenerateGUID(wrap)
+  local g = "00000000-0000-0000-0000-000000000000"
+  if wrap then return "{" .. g .. "}" end
+  return g
+end
+function HttpService:UrlEncode(s) return tostring(s or "") end
+function HttpService:UrlDecode(s) return tostring(s or "") end
+
+local RunService = __deep_proxy("RunService")
+RunService.Heartbeat = { Connect = function(_, fn) return { Disconnect = function() end } end }
+RunService.RenderStepped = RunService.Heartbeat
+RunService.Stepped = RunService.Heartbeat
+function RunService:IsClient() return true end
+function RunService:IsServer() return false end
+function RunService:IsStudio() return false end
+function RunService:IsRunning() return true end
+
+local ReplicatedStorage = __deep_proxy("ReplicatedStorage")
+local Lighting = __deep_proxy("Lighting")
+local TweenService = __deep_proxy("TweenService")
+local UserInputService = __deep_proxy("UserInputService")
+local TeleportService = __deep_proxy("TeleportService")
+local MarketplaceService = __deep_proxy("MarketplaceService")
+local StarterGui = __deep_proxy("StarterGui")
+local CoreGui = __deep_proxy("CoreGui")
+local Stats = __deep_proxy("Stats")
+local SoundService = __deep_proxy("SoundService")
+local TextService = __deep_proxy("TextService")
+local PathfindingService = __deep_proxy("PathfindingService")
+local CollectionService = __deep_proxy("CollectionService")
+local LogService = __deep_proxy("LogService")
+local GuiService = __deep_proxy("GuiService")
+local GroupService = __deep_proxy("GroupService")
+local Chat = __deep_proxy("Chat")
+local Teams = __deep_proxy("Teams")
+local VirtualUser = __deep_proxy("VirtualUser")
+
+local serviceMap = {
+  Players = Players,
+  Workspace = Workspace,
+  workspace = Workspace,
+  HttpService = HttpService,
+  RunService = RunService,
+  ReplicatedStorage = ReplicatedStorage,
+  Lighting = Lighting,
+  TweenService = TweenService,
+  UserInputService = UserInputService,
+  TeleportService = TeleportService,
+  MarketplaceService = MarketplaceService,
+  StarterGui = StarterGui,
+  CoreGui = CoreGui,
+  Stats = Stats,
+  SoundService = SoundService,
+  TextService = TextService,
+  PathfindingService = PathfindingService,
+  CollectionService = CollectionService,
+  LogService = LogService,
+  GuiService = GuiService,
+  GroupService = GroupService,
+  Chat = Chat,
+  Teams = Teams,
+  VirtualUser = VirtualUser,
+  VirtualInputManager = __deep_proxy("VirtualInputManager"),
+  InsertService = __deep_proxy("InsertService"),
+  ContentProvider = __deep_proxy("ContentProvider"),
+  ContextActionService = __deep_proxy("ContextActionService"),
+  ProximityPromptService = __deep_proxy("ProximityPromptService"),
+  BadgeService = __deep_proxy("BadgeService"),
+  DataStoreService = __deep_proxy("DataStoreService"),
+  MemoryStoreService = __deep_proxy("MemoryStoreService"),
+  MessagingService = __deep_proxy("MessagingService"),
+  PhysicsService = __deep_proxy("PhysicsService"),
+  PolicyService = __deep_proxy("PolicyService"),
+  SocialService = __deep_proxy("SocialService"),
+}
+
+game = __deep_proxy("DataModel")
+game.Players = Players
+game.Workspace = Workspace
+game.workspace = Workspace
+game.HttpService = HttpService
+game.JobId = "00000000-0000-0000-0000-000000000000"
+game.PlaceId = 0
+game.GameId = 0
+game.PlaceVersion = 1
+function game:GetService(name)
+  name = tostring(name or "")
+  if serviceMap[name] then return serviceMap[name] end
+  local svc = __deep_proxy(name)
+  serviceMap[name] = svc
+  return svc
+end
+function game:FindService(name) return game:GetService(name) end
+function game:GetServiceAsync(name) return game:GetService(name) end
+function game:HttpGet(url) return __cap_http(url) end
+function game:HttpGetAsync(url) return __cap_http(url) end
+function game:Shutdown() end
+function game:IsLoaded() return true end
+function game:GetChildren() return {} end
+function game:WaitForChild(name) return game:GetService(name) end
+function game:FindFirstChild(name) return serviceMap[name] or __deep_proxy(tostring(name)) end
+
+workspace = Workspace
+Workspace.Parent = game
+Players.Parent = game
+
+-- executor / syn / filesystem / misc
 getgenv = getgenv or function() return _G end
 getrenv = getrenv or function() return _G end
 getfenv = getfenv or function() return _G end
 setfenv = setfenv or function(f, env) return f end
-wait = wait or function() end
+getsenv = getsenv or function() return _G end
+getmenv = getmenv or function() return _G end
+
+local __fs = {}
+writefile = writefile or function(path, data) __fs[tostring(path)] = tostring(data or "") end
+readfile = readfile or function(path) return __fs[tostring(path)] or "" end
+isfile = isfile or function(path) return __fs[tostring(path)] ~= nil end
+isfolder = isfolder or function() return false end
+makefolder = makefolder or function() end
+listfiles = listfiles or function() return {} end
+delfile = delfile or function(path) __fs[tostring(path)] = nil end
+delfolder = delfolder or function() end
+appendfile = appendfile or function(path, data)
+  __fs[tostring(path)] = (__fs[tostring(path)] or "") .. tostring(data or "")
+end
+loadfile = loadfile or function(path)
+  local c = __fs[tostring(path)]
+  if not c then return nil, "file not found" end
+  return loadstring(c, "@" .. tostring(path))
+end
+dofile = dofile or function(path)
+  local fn, err = loadfile(path)
+  if not fn then error(err) end
+  return fn()
+end
+
+setclipboard = setclipboard or function(s) print("__CAP_CLIP__" .. tostring(s)) end
+toclipboard = toclipboard or setclipboard
+setfflag = setfflag or function() end
+getfflag = getfflag or function() return nil end
+
+local function __http_request(opts)
+  if type(opts) == "string" then
+    __cap_http(opts)
+    return { Success = true, Body = "--http-stub--", StatusCode = 200, Headers = {} }
+  end
+  if type(opts) == "table" and opts.Url then __cap_http(opts.Url) end
+  return { Success = true, Body = "--http-stub--", StatusCode = 200, Headers = {} }
+end
+request = request or __http_request
+http_request = http_request or __http_request
+http = http or { request = __http_request }
+syn = syn or {
+  request = __http_request,
+  protect_gui = function(g) return g end,
+  unprotect_gui = function(g) return g end,
+  queue_on_teleport = function() end,
+  secure_call = function(f, ...) return f(...) end,
+  is_beta = function() return false end,
+}
+is_synapse_function = is_synapse_function or function() return false end
+isexecutorclosure = isexecutorclosure or function() return false end
+isourclosure = isourclosure or function() return false end
+checkclosure = checkclosure or function() return false end
+clonefunction = clonefunction or function(f) return f end
+newcclosure = newcclosure or function(f) return f end
+hookfunction = hookfunction or function(a, b) return a end
+replaceclosure = replaceclosure or hookfunction
+hookmetamethod = hookmetamethod or function(obj, mm, fn) return function() end end
+getrawmetatable = getrawmetatable or function(obj) return getmetatable(obj) end
+setrawmetatable = setrawmetatable or setmetatable
+setreadonly = setreadonly or function() end
+make_writeable = make_writeable or function() end
+make_readonly = make_readonly or function() end
+isreadonly = isreadonly or function() return false end
+getnamecallmethod = getnamecallmethod or function() return "" end
+setnamecallmethod = setnamecallmethod or function() end
+checkcaller = checkcaller or function() return true end
+islclosure = islclosure or function() return true end
+iscclosure = iscclosure or function() return false end
+getgc = getgc or function() return {} end
+getreg = getreg or function() return {} end
+getinstances = getinstances or function() return {} end
+getnilinstances = getnilinstances or function() return {} end
+getscripts = getscripts or function() return {} end
+getrunningscripts = getrunningscripts or function() return {} end
+getloadedmodules = getloadedmodules or function() return {} end
+getconnections = getconnections or function() return {} end
+firesignal = firesignal or function() end
+fireclickdetector = fireclickdetector or function() end
+fireproximityprompt = fireproximityprompt or function() end
+firetouchinterest = firetouchinterest or function() end
+gethiddenproperty = gethiddenproperty or function() return nil end
+sethiddenproperty = sethiddenproperty or function() end
+gethui = gethui or function() return CoreGui end
+Drawing = Drawing or {
+  new = function(ty) return __deep_proxy("Drawing." .. tostring(ty)) end,
+  Fonts = { UI = 0, System = 1, Plex = 2, Monospace = 3 },
+}
+debug = debug or {}
+debug.getinfo = debug.getinfo or function() return { source = "@", short_src = "?", linedefined = 1, what = "Lua", namewhat = "", name = "?" } end
+debug.getupvalue = debug.getupvalue or function() return nil end
+debug.setupvalue = debug.setupvalue or function() end
+debug.getconstants = debug.getconstants or function() return {} end
+debug.getproto = debug.getproto or function() return function() end end
+debug.getprotos = debug.getprotos or function() return {} end
+debug.getstack = debug.getstack or function() return nil end
+debug.setstack = debug.setstack or function() end
+debug.getregistry = debug.getregistry or function() return {} end
+identifyexecutor = identifyexecutor or function() return "ShivVM", "1.0" end
+getexecutorname = getexecutorname or function() return "ShivVM" end
+
+wait = wait or function(n) end
 task = task or {
-  wait = function() end,
+  wait = function(n) end,
   spawn = function(f) if type(f)=="function" then pcall(f) end end,
   defer = function(f) if type(f)=="function" then pcall(f) end end,
-  delay = function(_, f) if type(f)=="function" then pcall(f) end end
+  delay = function(_, f) if type(f)=="function" then pcall(f) end end,
+  synchronize = function(f) if type(f)=="function" then pcall(f) end end,
+  desynchronize = function() end,
 }
-Instance = Instance or { new = function() return setmetatable({}, {__index=function() return function() end end}) end }
-typeof = typeof or type
+spawn = spawn or task.spawn
+delay = delay or task.delay
+
+Instance = Instance or {
+  new = function(className, parent)
+    local inst = __deep_proxy(tostring(className or "Instance"))
+    inst.ClassName = tostring(className or "Instance")
+    inst.Parent = parent
+    return inst
+  end
+}
+typeof = typeof or function(v)
+  local t = type(v)
+  if t == "table" then
+    local cn = rawget(v, "ClassName")
+    if type(cn) == "string" then return cn end
+  end
+  return t
+end
 tick = tick or os.clock
 time = time or os.time
-Vector3 = Vector3 or { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
-Vector2 = Vector2 or { new = function(x,y) return {X=x or 0,Y=y or 0} end }
-CFrame = CFrame or { new = function() return {} end }
-UDim2 = UDim2 or { new = function() return {} end }
-Color3 = Color3 or { new = function() return {} end, fromRGB = function() return {} end }
-Enum = Enum or setmetatable({}, {__index = function() return setmetatable({}, {__index = function() return 0 end}) end})
+elapsedTime = elapsedTime or os.clock
+time = time or os.time
+Vector3 = Vector3 or { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0, Magnitude=0, Unit={X=0,Y=0,Z=0}} end, zero = {X=0,Y=0,Z=0} }
+Vector2 = Vector2 or { new = function(x,y) return {X=x or 0,Y=y or 0} end, zero = {X=0,Y=0} }
+CFrame = CFrame or { new = function() return { Position = Vector3.new(), LookVector = Vector3.new(0,0,-1) } end }
+UDim2 = UDim2 or { new = function(xS,xO,yS,yO) return {X={Scale=xS or 0,Offset=xO or 0},Y={Scale=yS or 0,Offset=yO or 0}} end, fromScale = function(x,y) return UDim2.new(x,0,y,0) end, fromOffset = function(x,y) return UDim2.new(0,x,0,y) end }
+UDim = UDim or { new = function(s,o) return {Scale=s or 0, Offset=o or 0} end }
+Color3 = Color3 or { new = function(r,g,b) return {R=r or 0,G=g or 0,B=b or 0} end, fromRGB = function(r,g,b) return Color3.new((r or 0)/255,(g or 0)/255,(b or 0)/255) end, fromHSV = function() return Color3.new() end, fromHex = function() return Color3.new() end }
+BrickColor = BrickColor or { new = function() return { Color = Color3.new() } end }
+Ray = Ray or { new = function(o,d) return { Origin = o, Direction = d } end }
+RaycastParams = RaycastParams or { new = function() return {} end }
+Region3 = Region3 or { new = function() return {} end }
+NumberRange = NumberRange or { new = function(a,b) return {Min=a or 0, Max=b or a or 0} end }
+NumberSequence = NumberSequence or { new = function() return {} end }
+ColorSequence = ColorSequence or { new = function() return {} end }
+TweenInfo = TweenInfo or { new = function() return {} end }
+Rect = Rect or { new = function() return {} end }
+Axes = Axes or { new = function() return {} end }
+Faces = Faces or { new = function() return {} end }
+Enum = Enum or setmetatable({}, {
+  __index = function(_, k)
+    return setmetatable({}, {
+      __index = function(_, k2) return { Name = tostring(k2), Value = 0 } end
+    })
+  end
+})
 shared = shared or {}
 _G.shared = shared
+_G.game = game
+_G.workspace = workspace
+
+-- pcall shield for common kick/ban patterns at top level
+local __old_error = error
+-- =====================================================
 
 -- Real compiler kept private for bootstrap only
 local __real_load = loadstring or load
