@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // BRUTEFORCE FINAL</title>
+<title>VEX // ROLLING XOR</title>
 <style>
   :root { --bg:#050508; --panel:#0d0d12; --border:#1f1f2a; --txt:#d1d1d6; --acc:#00ffcc; --warn:#ffaa00; --err:#ff3366; }
   body { background:var(--bg); color:var(--txt); font:14px ui-monospace,monospace; padding:16px; margin:0; }
@@ -19,7 +19,7 @@
 </head>
 <body>
 
-<h1>VEX // BRUTEFORCE FINAL</h1>
+<h1>VEX // ROLLING XOR</h1>
 <div id="drop"><b>TAP HERE</b> to load target</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
 <div id="status">waiting...</div>
@@ -64,26 +64,14 @@ function decEsc(lit){
 
 function toStr(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return s; }
 
-// STRICT SCORING: Must look like real code/URL, not random base64
+// Simple score for rolling XOR: count printable chars
 function score(s){
-  if (!s || s.length < 3) return -1;
-  
-  let printable = 0;
-  let luaChars = 0;
-  let urlChars = 0;
-  
+  let pts = 0;
   for(let i=0; i<s.length; i++){
     let c = s.charCodeAt(i);
-    if (c >= 32 && c < 127) printable++;
-    if ("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_".indexOf(s[i]) > -1) luaChars++;
-    if ("http:/.-?=&_".indexOf(s[i]) > -1) urlChars++;
+    if (c >= 32 && c < 127) pts++;
   }
-  
-  // If it's mostly non-printable, fail immediately
-  if (printable < s.length * 0.8) return -1;
-  
-  // Score based on letters and URL chars
-  return (luaChars * 2) + (urlChars * 5) + printable;
+  return pts;
 }
 
 const juicy = /https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
@@ -118,7 +106,7 @@ function process(src){
         lits.push(buf); k=j+1;
       } else k++;
     }
-    log(`extracted ${lits.length} strings. locking in...`);
+    log(`extracted ${lits.length} strings. rolling...`);
 
     let C = lits.map(decEsc);
     let hits=0, outHtml='';
@@ -126,31 +114,52 @@ function process(src){
     C.forEach((u8, idx) => {
       let rawStr = toStr(u8);
       
+      let candidates = [rawStr];
+      try {
+        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
+        while(s.length % 4) s += '=';
+        let b64 = atob(s);
+        if (b64) candidates.push(b64);
+      } catch(e) {}
+
       let bestText = '';
       let bestScore = -1;
 
-      // FORCE XOR TEST ONLY. No raw, no base64 cheating.
-      for(let key=1; key<255; key++){
-        let dec = '';
-        for(let x=0; x<rawStr.length; x++) dec += String.fromCharCode(rawStr.charCodeAt(x) ^ key);
-        let sc = score(dec);
-        if (sc > bestScore) {
-          bestScore = sc;
-          bestText = dec;
+      candidates.forEach(base => {
+        // 1. Single byte XOR
+        for(let key=1; key<255; key++){
+          let dec = '';
+          for(let x=0; x<base.length; x++) dec += String.fromCharCode(base.charCodeAt(x) ^ key);
+          let sc = score(dec);
+          if (sc > bestScore) { bestScore = sc; bestText = dec; }
         }
-      }
+        
+        // 2. Rolling 2-byte XOR
+        if (base.length > 4) {
+            for(let k1=1; k1<255; k1+=15) { // Step 15 to save CPU
+                for(let k2=1; k2<255; k2+=15) {
+                    let dec = '';
+                    for(let x=0; x<base.length; x++) {
+                        let key = (x % 2 === 0) ? k1 : k2;
+                        dec += String.fromCharCode(base.charCodeAt(x) ^ key);
+                    }
+                    let sc = score(dec);
+                    if (sc > bestScore) { bestScore = sc; bestText = dec; }
+                }
+            }
+        }
+      });
 
-      // Clean up the best result (strip non-printables)
       let cleaned = bestText.replace(/[^\x20-\x7E]/g, '');
 
-      // Strict requirement: must have a decent score and match juicy tokens
+      // only show if it's a real hit or if we're in the ballpark
       if (bestScore > 0 && juicy.test(cleaned)) {
         outHtml += `<span class="hit">[${idx}] ${cleaned}</span>`;
         hits++;
       }
     });
 
-    out.innerHTML = outHtml || '<div style="color:#888">no hits found. the encryption is two-layered.</div>';
+    out.innerHTML = outHtml || '<div style="color:#888">no hits.</div>';
     out.style.display = 'block';
     log(`done. ${hits} hits.`);
 
