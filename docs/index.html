@@ -3,152 +3,163 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // ECON CRACKER v3</title>
+<title>VEX // ECON CRACKER v4</title>
 <style>
-  :root { --bg:#0a0a0c; --fg:#e0e0e0; --acc:#00ffcc; --err:#ff3366; --box:#141418; }
-  body { background:var(--bg); color:var(--fg); font:13px/1.4 ui-monospace,monospace; padding:12px; margin:0; }
-  h1 { font-size:15px; color:var(--acc); margin:0 0 10px; letter-spacing:1px; }
-  #drop { border:2px dashed #333; border-radius:8px; padding:30px 10px; text-align:center; color:#888; margin-bottom:10px; cursor:pointer; }
-  #drop.hot { border-color:var(--acc); color:var(--acc); background:rgba(0,255,204,.05); }
-  #status { color:var(--acc); margin-bottom:8px; font-weight:bold; min-height:16px; }
-  #status.error { color:var(--err); }
-  #out { background:#000; border:1px solid #222; border-radius:6px; padding:10px; white-space:pre-wrap; word-break:break-all; max-height:65vh; overflow-y:auto; font-size:12px; display:none; }
-  .hit { color:#ffaa00; font-weight:bold; background:rgba(255,170,0,.1); display:block; margin:2px 0; padding:2px 4px; }
-  .b64 { color:#00aaff; display:block; }
-  .raw { color:#777; display:block; }
-  input[type=file]{ display:none; }
+  body{background:#0a0a0c;color:#e0e0e0;font:14px ui-monospace,monospace;padding:12px;margin:0}
+  h1{font-size:16px;color:#00ffcc;margin:0 0 10px}
+  #drop{border:2px dashed #333;border-radius:8px;padding:30px 10px;text-align:center;color:#888;margin-bottom:12px;cursor:pointer}
+  #drop.hot{border-color:#00ffcc;color:#00ffcc;background:rgba(0,255,204,.05)}
+  #status{color:#00ffcc;margin-bottom:8px;font-weight:bold;min-height:16px;word-break:break-all}
+  #status.error{color:#ff3366}
+  #log{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow-y:auto;font-size:12px;display:none}
+  input[type=file]{display:none}
 </style>
 </head>
 <body>
-<h1>VEX // ECON CRACKER v3</h1>
-<div id="drop"><b>TAP HERE</b> to load Econ.txt<br><small>(pc: drag & drop works)</small></div>
+<h1>VEX // ECON CRACKER v4</h1>
+<div id="drop"><b>TAP HERE</b> to load Econ.txt</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
-<div id="status">waiting for target...</div>
-<div id="out"></div>
+<div id="status">waiting...</div>
+<div id="log"></div>
+
 <script>
-const drop=document.getElementById('drop'), fi=document.getElementById('fileInput'),
-      st=document.getElementById('status'), out=document.getElementById('out');
+const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
+      st=document.getElementById('status'),log=document.getElementById('log');
 drop.onclick=()=>fi.click();
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('hot')});
 drop.addEventListener('dragleave',()=>drop.classList.remove('hot'));
 drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('hot');if(e.dataTransfer.files.length)load(e.dataTransfer.files[0]);});
-fi.onchange=e=>{ if(e.target.files.length) load(e.target.files[0]); };
+fi.onchange=e=>{if(e.target.files.length)load(e.target.files[0]);};
+
+function print(msg,isErr){
+  log.style.display='block';
+  log.innerHTML += `<div style="color:${isErr?'#ff3366':'#00ffcc'}">${msg}</div>`;
+  st.textContent=msg;
+  if(isErr) st.className='error'; else st.className='';
+}
 
 function load(file){
-  st.className=''; st.textContent=`reading ${file.name} (${file.size}b)...`; out.style.display='none'; out.innerHTML='';
+  st.textContent=`reading ${file.name} (${file.size}b)...`; log.innerHTML='';
   const r=new FileReader();
-  r.onload=e=>{ st.textContent='scanning (no regex, linear)...'; setTimeout(()=>scan(e.target.result),30); };
-  r.onerror=()=>{ st.className='error'; st.textContent='FileReader died.'; };
+  r.onload=e=>setTimeout(()=>process(e.target.result),50);
+  r.onerror=()=>print('FileReader died.',true);
   r.readAsText(file);
 }
 
-// FAST linear scan: find 'local C=' then brace-match, collect "..." literals.
-function extractC(src){
-  let i = src.indexOf('local C');
-  if (i < 0) i = src.indexOf('local\u00a0C');
-  if (i < 0) throw new Error("no 'local C' found — file truncated or wrong file");
-  // find first '{' after that
-  let b = src.indexOf('{', i);
-  if (b < 0) throw new Error("no '{' after local C");
-  let depth = 0, start = b, end = -1;
-  for (let j = b; j < src.length; j++){
-    const c = src[j];
-    if (c === '{') depth++;
-    else if (c === '}') { depth--; if (depth === 0){ end = j; break; } }
-    else if (c === '"'){ // skip string literal fast
-      j++;
-      while (j < src.length){ if (src[j]==='\\') j+=2; else if (src[j]==='"') break; else j++; }
+function process(src){
+  try{
+    print(`file size: ${src.length} chars`);
+    
+    // --- CHECK IF IT'S A STUB ---
+    // Stubs are usually short and have loadstring(game:HttpGet(...)) in them.
+    const isStub = src.length < 50000;
+    if(isStub){
+      print(`WARNING: This is a loader stub! (${src.length} bytes)`, true);
+      print(`The real deobfuscated script isn't here. It's downloading it from a URL.`, true);
+      print(`Looking for the download URL...`);
+      
+      // try to find a URL
+      const urlMatches = src.match(/https?:\/\/[^\s'"\]\)]+/g);
+      if(urlMatches){
+        urlMatches.forEach(u=>print(`FOUND URL: ${u}`));
+        print(`\n>> BRO: Go to the above URL in ur browser, download that file, and load IT into this tool. <<`);
+      } else {
+        print(`No URL found. Let me dump what's inside this file so you can see.`);
+      }
     }
+
+    // --- TRY TO FIND C TABLE ---
+    const i = src.indexOf('local C');
+    if(i<0){
+      print('No "local C" table found. (Confirming it is a stub.)', true);
+      print('Dumping raw file text to download so u can inspect it:');
+      downloadTxt(src, 'Econ_Dump_Raw.txt');
+      return;
+    }
+
+    print('found local C table! scanning...');
+    let b = src.indexOf('{', i);
+    let depth=0, end=-1;
+    for(let j=b;j<src.length;j++){
+      const c=src[j];
+      if(c==='{')depth++;
+      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
+      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
+    }
+    if(end<0) throw new Error('unbalanced braces — file cut off');
+
+    const table = src.slice(b+1,end);
+    print(`extracted table (${table.length} chars)`);
+
+    // pull literals
+    const lits=[]; let k=0;
+    while(k<table.length){
+      if(table[k]==='"'){
+        let j=k+1, buf='';
+        while(j<table.length){
+          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
+          if(table[j]==='"')break;
+          buf+=table[j];j++;
+        }
+        lits.push(buf); k=j+1;
+      } else k++;
+    }
+    print(`found ${lits.length} string literals. decoding...`);
+
+    // decode logic
+    const decoded = lits.map(decEsc);
+    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
+    let outTxt = '=== VEX ECON DUMP ===\n\n';
+
+    decoded.forEach((u8,idx)=>{
+      let p=printab(u8);
+      let b64=b64d(u8);
+      let pb=b64?printab(b64):null;
+      
+      if(p) outTxt += `[${idx}] RAW: ${p}\n`;
+      if(pb) outTxt += `[${idx}] B64: ${pb}\n`;
+      if(!p && !pb) outTxt += `[${idx}] <unreadable bytes>\n`;
+    });
+
+    print(`decoded all strings.`, false);
+    downloadTxt(outTxt, 'Econ_Decoded.txt');
+    print(`DOWNLOADED: Econ_Decoded.txt`);
+
+  }catch(e){
+    print('CRASH: '+e.message, true);
   }
-  if (end < 0) throw new Error("unbalanced braces — file cut off before table end");
-  return src.slice(start+1, end);
 }
 
 function decEsc(lit){
-  const o=[]; let i=0;
+  const o=[];let i=0;
   while(i<lit.length){
     if(lit[i]==='\\'){
       const m=/^\d{1,3}/.exec(lit.slice(i+1));
-      if(m){ o.push(parseInt(m[0],10)&255); i+=1+m[0].length; continue; }
+      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
       const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
-      if(esc!==undefined){ o.push(esc); i+=2; continue; }
-      i+=2; continue;
+      if(esc!==undefined){o.push(esc);i+=2;continue;}
+      i+=2;continue;
     }
-    o.push(lit.charCodeAt(0)&255); i++;
+    o.push(lit.charCodeAt(0)&255);i++;
   }
   return Uint8Array.from(o);
 }
-
 function b64d(u8){
-  try{ const s=String.fromCharCode(...u8); if(!/^[A-Za-z0-9+/=]+$/.test(s)) return null;
-    return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); }catch(e){ return null; }
+  try{const s=String.fromCharCode(...u8);if(!/^[A-Za-z0-9+/=]+$/.test(s))return null;return Uint8Array.from(atob(s),c=>c.charCodeAt(0));}catch(e){return null;}
 }
 function printab(u8){
-  if(!u8||!u8.length) return null; let g=0;
-  for(const b of u8) if((b>=32&&b<127)||b===9||b===10||b===13) g++;
-  return g>=u8.length*0.75 ? new TextDecoder('latin-1').decode(u8) : null;
+  if(!u8||!u8.length)return null;let g=0;
+  for(const b of u8)if((b>=32&&b<127)||b===9||b===10||b===13)g++;
+  return g>=u8.length*0.75?new TextDecoder('latin-1').decode(u8):null;
 }
 
-function scan(src){
-  try{
-    const table = extractC(src);
-    // pull "..." literals from the slice, linear
-    const lits=[]; let i=0;
-    while(i<table.length){
-      if(table[i]==='"'){
-        let j=i+1, buf='';
-        while(j<table.length){
-          if(table[j]==='\\'){ buf+=table[j]+table[j+1]; j+=2; continue; }
-          if(table[j]==='"') break;
-          buf+=table[j]; j++;
-        }
-        lits.push(buf); i=j+1;
-      } else i++;
-    }
-    if(!lits.length) throw new Error("C table found but 0 string literals");
-    st.textContent=`found ${lits.length} literals. decoding in chunks...`;
-    runChunks(lits);
-  }catch(e){ st.className='error'; st.textContent='ERROR: '+e.message; }
-}
-
-// process in chunks so mobile doesn't hang
-function runChunks(lits){
-  const decoded = lits.map(decEsc);
-  const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
-  const hits=[], others=[];
-  let idx=0;
-  function step(){
-    const end=Math.min(idx+40, decoded.length);
-    for(; idx<end; idx++){
-      const u8=decoded[idx];
-      let p=printab(u8), hitTxt=null;
-      const b=b64d(u8), pb=b?printab(b):null;
-      if(p&&juicy.test(p)) hitTxt=p;
-      if(!hitTxt&&pb&&juicy.test(pb)) hitTxt=pb;
-      if(!hitTxt && u8.length>3){
-        let bs=0,bt=null;
-        for(let k=1;k<255;k++){let s=0,t='';for(let q=0;q<u8.length;q++){const x=u8[q]^k;t+=String.fromCharCode(x);if(x>=32&&x<127)s++;}if(s>bs){bs=s;bt=t;}}
-        if(bt&&juicy.test(bt)&&bs>u8.length*0.8) hitTxt=bt;
-      }
-      if(hitTxt) hits.push(`<span class="hit">[${idx}] ${hitTxt}</span>`);
-      else if(pb) others.push(`<span class="b64">[${idx}] ${pb}</span>`);
-      else if(p) others.push(`<span class="raw">[${idx}] ${p}</span>`);
-    }
-    st.textContent=`decoding... ${idx}/${decoded.length}`;
-    if(idx<decoded.length){ setTimeout(step,0); return; }
-    render(hits,others);
-  }
-  step();
-}
-
-function render(hits,others){
-  let h='';
-  if(hits.length){ h+=`<div style="color:#00ffcc;font-weight:bold;margin-bottom:6px">=== JUICY HITS (${hits.length}) ===</div>`+hits.join('\n')+'\n\n'; }
-  else h+=`<div style="color:#ff3366;font-weight:bold;margin-bottom:6px">no juicy hits — dumping readable below</div>`;
-  if(others.length) h+=`<div style="color:#888;margin:10px 0 6px">=== OTHER (${others.length}) ===</div>`+others.join('\n');
-  out.innerHTML=h||'<span style="color:#888">nothing readable</span>';
-  out.style.display='block';
-  st.textContent=`done. ${hits.length} hits, ${others.length} others.`;
+function downloadTxt(text, filename){
+  const blob=new Blob([text],{type:'text/plain'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=filename;
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
 }
 </script>
 </body>
