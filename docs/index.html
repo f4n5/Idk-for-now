@@ -81,6 +81,25 @@ button:hover, .btn:hover { background: #252d40; border-color: #3a455c; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.vm { background: #df9b3f; border-color: #df9b3f; color: #fff; }
 button.chain { background: #9b59b6; border-color: #9b59b6; color: #fff; }
+.troll-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: #f07178;
+  color: #1a0a0c;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  animation: trollpulse 1.2s ease-in-out infinite;
+  display: none;
+}
+.troll-badge.show { display: inline-block; }
+@keyframes trollpulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(240,113,120,0.5); }
+  50% { box-shadow: 0 0 0 6px rgba(240,113,120,0); }
+}
+.log .troll { color: #f07178; font-weight: 700; }
 button.chain:hover { filter: brightness(1.08); }
 button.primary:hover, button.vm:hover { filter: brightness(1.08); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -207,6 +226,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <span class="tag">static · C / P / shuffle · URL · auto-chain</span>
   <span class="tag">fengari offline</span>
   <span class="tag" id="verTag">ready</span>
+  <span class="troll-badge" id="trollBadge">TROLL SCRIPT DETECTED</span>
 </header>
 <main>
   <div class="drop" id="dropZone">
@@ -315,6 +335,49 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
   let finalSource = "";
   let chainDepthReached = 0;
 
+
+
+  function payloadFingerprint(s) {
+    s = stripBomAndNoise(s || "");
+    const head = s.slice(0, 120);
+    const tail = s.length > 120 ? s.slice(-80) : "";
+    return s.length + "|" + head + "|" + tail;
+  }
+
+  function isLuraphShellHead(s) {
+    s = stripBomAndNoise(s || "").replace(/\s+/g, " ").slice(0, 200);
+    // classic luraph/econ outer wrapper
+    if (/return\s*\(\s*function\s*\(/.test(s) && /local\s+C\s*=\s*\{/.test(s)) return true;
+    if (/return\s*\(\s*function\s*\([^)]*\)\s*local\s+C\s*=\s*\{/.test(s)) return true;
+    if (/^\s*return\s*\(\s*function/.test(s) && /local\s+C\s*=/.test(s)) return true;
+    return false;
+  }
+
+  function payloadsMatch(a, b) {
+    a = stripBomAndNoise(a || "");
+    b = stripBomAndNoise(b || "");
+    if (!a || !b) return false;
+    if (a === b) return true;
+    // same length + same 100-char head
+    if (a.length === b.length && a.slice(0, 100) === b.slice(0, 100)) return true;
+    // near-identical head even if whitespace differs slightly
+    const ha = a.slice(0, 100).replace(/\s+/g, "");
+    const hb = b.slice(0, 100).replace(/\s+/g, "");
+    if (ha.length >= 40 && ha === hb && Math.abs(a.length - b.length) < 8) return true;
+    return false;
+  }
+
+  function flagTroll(reason) {
+    log("══════════════════════════════════════════════", "troll");
+    log("[WARNING] RECURSIVE LOOP DETECTED! This script is a troll/honeypot. It just decrypts back into itself.", "troll");
+    if (reason) log("[WARNING] " + reason, "troll");
+    log("[WARNING] Do not execute this on an account. Author is baiting reverse engineers.", "troll");
+    log("══════════════════════════════════════════════", "troll");
+    const badge = $("#trollBadge");
+    if (badge) badge.classList.add("show");
+    const tag = $("#verTag");
+    if (tag) tag.textContent = (fileName || "script") + " · TROLL";
+  }
 
   function stripBomAndNoise(s) {
     if (s == null) return "";
@@ -1172,7 +1235,10 @@ print("__VM_FINISHED__")
     setBar(10);
     const r = runOneStage(src, 1, { maxDepth: 1 });
     setBar(100);
-    if (r.nextPayload && looksLikeFinalSource(r.nextPayload)) {
+    if (r.nextPayload && (payloadsMatch(r.nextPayload, src) || (isLuraphShellHead(r.nextPayload) && isLuraphShellHead(src) && r.nextPayload.slice(0, 60) === stripBomAndNoise(src).slice(0, 60)))) {
+      flagTroll("VM loadstring returned the same Luraph shell. Recursive troll/honeypot.");
+      finalSource = r.nextPayload;
+    } else if (r.nextPayload && looksLikeFinalSource(r.nextPayload)) {
       finalSource = r.nextPayload;
       log("captured final-looking payload (" + finalSource.length + " chars)", "ok");
       $("#btnFinal").disabled = false;
@@ -1195,13 +1261,21 @@ print("__VM_FINISHED__")
     finalSource = "";
     chainDepthReached = 0;
     const maxDepth = 5;
+    const origin = stripBomAndNoise(src);
+    const originFp = payloadFingerprint(origin);
+    const originHead = origin.slice(0, 100);
     log("Auto-Chain start — max depth " + maxDepth, "info");
+    log("origin head: " + payloadPreview(origin, 100), "info");
+    if (isLuraphShellHead(origin)) {
+      log("origin matches Luraph outer shell pattern (return(function… local C={)", "info");
+    }
     setBar(5);
 
-    let current = src;
+    let current = origin;
     let stage = 1;
     let lastFinal = null;
     const seenPayloads = new Set();
+    let troll = false;
 
     while (stage <= maxDepth) {
       const pct = 5 + Math.floor((90 * (stage - 1)) / maxDepth);
@@ -1210,12 +1284,28 @@ print("__VM_FINISHED__")
       chainDepthReached = stage;
 
       // fingerprint to avoid infinite identical loops
-      const fp = current.length + ":" + current.slice(0, 64) + ":" + current.slice(-64);
+      const fp = payloadFingerprint(current);
       if (seenPayloads.has(fp)) {
-        log("[STAGE " + stage + "] repeated payload — stopping chain", "info");
+        flagTroll("Same payload fingerprint seen twice (depth " + stage + "). Luraph Self-Loop.");
+        troll = true;
         break;
       }
       seenPayloads.add(fp);
+
+      // if a later stage is the origin again — classic econ/luraph troll
+      if (stage > 1 && payloadsMatch(current, origin)) {
+        flagTroll("Stage " + stage + " payload is identical to the original file. Luraph Self-Loop / honeypot.");
+        troll = true;
+        break;
+      }
+      if (stage > 1 && isLuraphShellHead(current) && isLuraphShellHead(origin)) {
+        // decrypt produced another luraph shell — almost always self-loop bait
+        if (payloadsMatch(current, origin) || current.slice(0, 80) === originHead.slice(0, 80)) {
+          flagTroll("Decrypted stage is another return(function(...)local C={...}) shell matching origin.");
+          troll = true;
+          break;
+        }
+      }
 
       const r = runOneStage(current, stage, { maxDepth: maxDepth });
 
@@ -1270,10 +1360,37 @@ print("__VM_FINISHED__")
         break;
       }
 
+      // abort if next stage would re-enter the original troll shell
+      if (payloadsMatch(candidate, origin) || (isLuraphShellHead(candidate) && payloadsMatch(candidate, origin))) {
+        flagTroll("Next loadstring payload is the original script again. Recursive troll detected.");
+        troll = true;
+        lastFinal = candidate;
+        break;
+      }
+      if (stage >= 2 && isLuraphShellHead(candidate) && isLuraphShellHead(origin)
+          && candidate.slice(0, 60) === origin.slice(0, 60)) {
+        flagTroll("Luraph Self-Loop: stage payload head equals origin head (return(function...local C={)).");
+        troll = true;
+        lastFinal = candidate;
+        break;
+      }
+
       log("[STAGE " + stage + "] chained → next payload " + candidate.length + " chars", "ok");
       current = candidate;
       lastFinal = candidate;
       stage++;
+    }
+
+    if (troll) {
+      setBar(100);
+      const juicyN = results.filter((x) => x.juicy).length;
+      setStats({ Dec: results.length, J: juicyN });
+      log("Auto-Chain aborted — troll/honeypot, depth " + chainDepthReached, "troll");
+      render();
+      $("#btnExport").disabled = false;
+      $("#btnExportJson").disabled = false;
+      // still allow inspecting captures; do not auto-download as "clean" source
+      return;
     }
 
     if (stage > maxDepth) {
@@ -2021,6 +2138,8 @@ print("__VM_FINISHED__")
     $("#btnRun").disabled = true; $("#btnVM").disabled = true; $("#btnChain").disabled = true;
     $("#btnExport").disabled = true; $("#btnExportJson").disabled = true; $("#btnFinal").disabled = true;
     $("#verTag").textContent = "ready"; fileInput.value = "";
+    const badge = $("#trollBadge");
+    if (badge) badge.classList.remove("show");
   });
   $("#search").addEventListener("input", render);
   $("#onlyJuicy").addEventListener("change", render);
