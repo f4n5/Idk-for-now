@@ -80,6 +80,8 @@ button, .btn {
 button:hover, .btn:hover { background: #252d40; border-color: #3a455c; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.vm { background: #df9b3f; border-color: #df9b3f; color: #fff; }
+button.chain { background: #9b59b6; border-color: #9b59b6; color: #fff; }
+button.chain:hover { filter: brightness(1.08); }
 button.primary:hover, button.vm:hover { filter: brightness(1.08); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 .panel {
@@ -202,7 +204,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
 <body>
 <header>
   <h1>Luraph V14+ String Deobfuscator</h1>
-  <span class="tag">static · C / P / shuffle · URL harvest</span>
+  <span class="tag">static · C / P / shuffle · URL · auto-chain</span>
   <span class="tag">fengari offline</span>
   <span class="tag" id="verTag">ready</span>
 </header>
@@ -216,8 +218,10 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <div class="row">
     <button class="primary" id="btnRun" disabled>Run Static</button>
     <button class="vm" id="btnVM" disabled>Execute Lua VM</button>
+    <button class="chain" id="btnChain" disabled title="Auto-unwrap nested loadstring stages">Auto-Chain VM</button>
     <button id="btnExport" disabled>Export TXT</button>
     <button id="btnExportJson" disabled>Export JSON</button>
+    <button id="btnFinal" disabled>Download Final .lua</button>
     <button id="btnClear">Clear</button>
   </div>
 
@@ -257,7 +261,10 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
     <pre>
 Static path: C table linear scan → shuffle pairs → P map → multi decrypt (b64 / P / XOR / LCG).
 VM path: offline Fengari (no CDN). Hooks string.char + table.concat + print.
-Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use desktop.
+Auto-Chain: loadstring payloads are re-fed into a fresh VM up to depth 5.
+Stops on URLs, HttpGet("https://..."), or readable Lua (Rayfield / multi-line source).
+Final unwrapped source auto-downloads as *_unwrapped.lua.
+Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash).
     </pre>
   </details>
 </main>
@@ -303,22 +310,60 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
     return null;
   }
 
-  // ---------- VM execution (correct fengari API) ----------
-  function runVM(src) {
-    const F = getFengari();
-    if (!F) {
-      log("Fengari not loaded (offline bundle missing).", "err");
-      return;
-    }
-    const { lua, lauxlib, lualib, to_luastring, to_jsstring } = F;
-    log("starting offline Fengari VM…", "info");
-    setBar(10);
 
+  // ---------- VM execution (correct fengari API) + Auto-Chain ----------
+  let finalSource = "";
+  let chainDepthReached = 0;
+
+  function looksLikeFinalSource(s) {
+    if (!s || typeof s !== "string") return false;
+    if (s.length < 40) return false;
+    // stop conditions: real URLs, HttpGet of a URL, readable library loaders
+    if (/https?:\/\/[^\s"'`]{8,}/i.test(s)) return true;
+    if (/HttpGet\s*\(\s*["'`]https?:\/\//i.test(s)) return true;
+    if (/loadstring\s*\(\s*game\s*:\s*HttpGet/i.test(s)) return true;
+    if (/\blocal\s+Rayfield\b/i.test(s)) return true;
+    if (/\bgetgenv\s*\(\s*\)\s*\.\s*\w+\s*=/i.test(s) && /function/i.test(s)) return true;
+    // readable multi-line lua with locals/functions and low escape density
+    const lines = s.split(/\r?\n/);
+    if (lines.length >= 5) {
+      const esc = (s.match(/\\[0-9]{2,3}/g) || []).length;
+      if (esc < s.length / 40 && /\b(local|function|return|end)\b/.test(s)) return true;
+    }
+    return false;
+  }
+
+  function isOpaquePayload(s) {
+    if (!s || s.length < 20) return true;
+    // still luraph-ish: dense decimal escapes or single huge line of noise
+    const esc = (s.match(/\\[0-9]{2,3}/g) || []).length;
+    if (esc > 30 && esc > s.length / 20) return true;
+    if (s.length > 500 && (s.match(/\n/g) || []).length < 2 && !/https?:\/\//i.test(s)) return true;
+    return false;
+  }
+
+  function createVMSession() {
+    const F = getFengari();
+    if (!F) return null;
+    const { lua, lauxlib, lualib, to_luastring, to_jsstring } = F;
     const L = lauxlib.luaL_newstate();
     lualib.luaL_openlibs(L);
+    return { F, lua, lauxlib, lualib, to_luastring, to_jsstring, L };
+  }
 
+  function runOneStage(src, stage, opts) {
+    opts = opts || {};
+    const maxDepth = opts.maxDepth || 5;
+    const session = createVMSession();
+    if (!session) {
+      log("Fengari not loaded (offline bundle missing).", "err");
+      return { ok: false, captures: [], loadstrings: [], error: "no fengari" };
+    }
+    const { lua, lauxlib, to_luastring, to_jsstring, L } = session;
+
+    const captures = [];
+    const loadstrings = [];
     const seen = new Set();
-    let hitCount = 0;
 
     function capture(s, tag) {
       if (!s || typeof s !== "string") return;
@@ -333,17 +378,18 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
       }
       if (!juicy && printable / s.length < 0.55) return;
       seen.add(s);
-      hitCount++;
-      results.push({
+      const rec = {
         index: results.length + 1,
         str: s,
         score: hasUrl ? 2000 : (juicy ? 999 : 60),
-        method: "VM:" + tag,
+        method: "VM:S" + stage + ":" + tag,
         juicy: juicy,
-        junk: false
-      });
-      if (juicy) log("VM juicy [" + tag + "]: " + s.slice(0, 180), "ok");
-      // split nested URLs out immediately
+        junk: false,
+        stage: stage
+      };
+      captures.push(rec);
+      results.push(rec);
+      if (juicy) log("[STAGE " + stage + "] juicy [" + tag + "]: " + s.slice(0, 180), "ok");
       if (s.length > 20) {
         URL_RE.lastIndex = 0;
         let um;
@@ -351,20 +397,22 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
           const u = um[0];
           if (seen.has(u)) continue;
           seen.add(u);
-          results.push({
+          const ur = {
             index: results.length + 1,
             str: u,
             score: 2000,
-            method: "VM:url-from-" + tag,
+            method: "VM:S" + stage + ":url-from-" + tag,
             juicy: true,
-            junk: false
-          });
-          log("VM URL: " + u.slice(0, 200), "ok");
+            junk: false,
+            stage: stage
+          };
+          captures.push(ur);
+          results.push(ur);
+          log("[STAGE " + stage + "] URL: " + u.slice(0, 200), "ok");
         }
       }
     }
 
-    // print → capture
     function js_print(Lstate) {
       const n = lua.lua_gettop(Lstate);
       const parts = [];
@@ -378,17 +426,37 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
         }
       }
       const line = parts.join("\t");
+      // intercept control tags
+      if (line.indexOf("__CAP_LOADSTRING__") === 0) {
+        const payload = line.slice(18);
+        if (payload && payload.length >= 8) {
+          loadstrings.push(payload);
+          capture(payload, "loadstring");
+        }
+        return 0;
+      }
+      if (line.indexOf("__CAP_CHAR__") === 0) { capture(line.slice(12), "char"); return 0; }
+      if (line.indexOf("__CAP_CONCAT__") === 0) { capture(line.slice(14), "concat"); return 0; }
+      if (line.indexOf("__CAP_GSUB__") === 0) { capture(line.slice(12), "gsub"); return 0; }
+      if (line.indexOf("__CAP_HTTP__") === 0) { capture(line.slice(12), "http"); return 0; }
+      if (line.indexOf("__VM_ERROR__") === 0) {
+        log("[STAGE " + stage + "] Lua error: " + line.slice(12), "err");
+        return 0;
+      }
+      if (line.indexOf("__VM_FINISHED__") === 0) return 0;
+      if (line.indexOf("__CAP_") === 0) return 0;
       capture(line, "print");
       return 0;
     }
+
     lua.lua_pushcfunction(L, js_print);
     lua.lua_setglobal(L, to_luastring("print"));
     lua.lua_pushcfunction(L, js_print);
     lua.lua_setglobal(L, to_luastring("warn"));
 
-    // Bootstrap hooks + mocks in Lua, then load user script as string and pcall it
-    // Avoid injecting raw user source into the outer template (escapes / size).
-    // Instead: set global __SRC and load() it.
+    // Bootstrap: hooks + SAFE loadstring that never crashes the host.
+    // loadstring returns a callable that, when invoked, emits the payload
+    // for the JS chain and runs it via pcall so syntax errors stay contained.
     const bootstrap = `
 local _char = string.char
 string.char = function(...)
@@ -420,7 +488,7 @@ end
 game = game or {}
 local function http_sink(url)
   print("__CAP_HTTP__" .. tostring(url))
-  return ""
+  return "--http-stub--"
 end
 game.HttpGet = http_sink
 game.HttpGetAsync = http_sink
@@ -430,7 +498,7 @@ game.GetService = function(name)
     GetAsync = http_sink,
     RequestAsync = function(opts)
       if type(opts) == "table" and opts.Url then print("__CAP_HTTP__" .. tostring(opts.Url)) end
-      return { Success = true, Body = "", StatusCode = 200 }
+      return { Success = true, Body = "--http-stub--", StatusCode = 200 }
     end
   }
 end
@@ -439,29 +507,67 @@ game.Players = { LocalPlayer = { Name = "Player", UserId = 1 } }
 getgenv = getgenv or function() return _G end
 getrenv = getrenv or function() return _G end
 getfenv = getfenv or function() return _G end
-setfenv = setfenv or function() end
+setfenv = setfenv or function(f, env) return f end
 wait = wait or function() end
-task = task or { wait = function() end, spawn = function(f) if type(f)=="function" then pcall(f) end end, defer = function(f) if type(f)=="function" then pcall(f) end end }
-Instance = Instance or { new = function() return {} end }
+task = task or {
+  wait = function() end,
+  spawn = function(f) if type(f)=="function" then pcall(f) end end,
+  defer = function(f) if type(f)=="function" then pcall(f) end end,
+  delay = function(_, f) if type(f)=="function" then pcall(f) end end
+}
+Instance = Instance or { new = function() return setmetatable({}, {__index=function() return function() end end}) end }
 typeof = typeof or type
 tick = tick or os.clock
 time = time or os.time
+Vector3 = Vector3 or { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
+Vector2 = Vector2 or { new = function(x,y) return {X=x or 0,Y=y or 0} end }
+CFrame = CFrame or { new = function() return {} end }
+UDim2 = UDim2 or { new = function() return {} end }
+Color3 = Color3 or { new = function() return {} end, fromRGB = function() return {} end }
+Enum = Enum or setmetatable({}, {__index = function() return setmetatable({}, {__index = function() return 0 end}) end})
+shared = shared or {}
+_G.shared = shared
 
-local old_loadstring = loadstring or load
-loadstring = function(code, chunk)
-  if type(code) == "string" and #code >= 8 then
-    print("__CAP_LOADSTRING__" .. code:sub(1, 200))
+-- Real compiler kept private for bootstrap only
+local __real_load = loadstring or load
+
+-- Public loadstring: capture + return a function that executes the chunk under pcall.
+-- Never throws into the host; chain driver reads __CAP_LOADSTRING__ payloads.
+loadstring = function(code, chunkname)
+  if type(code) ~= "string" then
+    return nil, "loadstring expects string"
   end
-  return old_loadstring(code, chunk)
+  if #code >= 8 then
+    -- emit full payload for the auto-chain (not truncated)
+    print("__CAP_LOADSTRING__" .. code)
+  end
+  local fn, err = __real_load(code, chunkname or "@stage")
+  if not fn then
+    -- return a stub so callers doing loadstring(...)() don't hard-crash
+    return function(...)
+      print("__VM_ERROR__loadstring compile: " .. tostring(err))
+      return nil
+    end, err
+  end
+  return function(...)
+    local results = { pcall(fn, ...) }
+    local ok = results[1]
+    if not ok then
+      print("__VM_ERROR__" .. tostring(results[2]))
+      return nil
+    end
+    return table.unpack(results, 2)
+  end
 end
 load = loadstring
 
--- run target
+-- run target stage
 local src = __SRC
 __SRC = nil
-local fn, err = loadstring(src, "@luraph")
+local fn, err = __real_load(src, "@stage" .. tostring(${STAGE}))
 if not fn then
-  print("__VM_ERROR__" .. tostring(err))
+  print("__VM_ERROR__compile: " .. tostring(err))
+  print("__VM_FINISHED__")
   return
 end
 local ok, e2 = pcall(fn)
@@ -471,62 +577,202 @@ end
 print("__VM_FINISHED__")
 `;
 
-    // Push source as global __SRC
+    // inject stage number into bootstrap
+    const bootSrc = bootstrap.replace("${STAGE}", String(stage));
+
     lua.lua_pushstring(L, to_luastring(src));
     lua.lua_setglobal(L, to_luastring("__SRC"));
 
-    setBar(30);
-    const status = lauxlib.luaL_dostring(L, to_luastring(bootstrap));
-    setBar(90);
-
-    // Drain any remaining prints already captured via our print hook path:
-    // Our js_print already pushed into results via capture(), but bootstrap uses
-    // print("__CAP_...") which we need to post-filter.
-    const filtered = [];
-    for (const r of results) {
-      let s = r.str;
-      let tag = r.method;
-      if (s.indexOf("__CAP_CHAR__") === 0) {
-        s = s.slice(12);
-        tag = "VM:char";
-      } else if (s.indexOf("__CAP_CONCAT__") === 0) {
-        s = s.slice(14);
-        tag = "VM:concat";
-      } else if (s.indexOf("__CAP_GSUB__") === 0) {
-        s = s.slice(12);
-        tag = "VM:gsub";
-      } else if (s.indexOf("__CAP_HTTP__") === 0) {
-        s = s.slice(12);
-        tag = "VM:http";
-      } else if (s.indexOf("__CAP_LOADSTRING__") === 0) {
-        s = s.slice(18);
-        tag = "VM:loadstring";
-      } else if (s.indexOf("__VM_ERROR__") === 0) {
-        log("Lua error: " + s.slice(12), "err");
-        continue;
-      } else if (s.indexOf("__VM_FINISHED__") === 0) {
-        continue;
-      } else if (s.indexOf("__CAP_") === 0) {
-        continue;
-      }
-      const juicy = JUICY_RE.test(s);
-      filtered.push({
-        index: filtered.length + 1,
-        str: s,
-        score: juicy ? 999 : r.score,
-        method: tag,
-        juicy: juicy,
-        junk: !juicy && (r.score || 0) < 25
-      });
+    let status = 0;
+    try {
+      status = lauxlib.luaL_dostring(L, to_luastring(bootSrc));
+    } catch (e) {
+      log("[STAGE " + stage + "] host exception: " + (e && e.message ? e.message : e), "err");
+      status = -1;
     }
-    results = filtered;
+
+    // pick best next payload: longest loadstring capture that still looks opaque or is final
+    let nextPayload = null;
+    if (loadstrings.length) {
+      // prefer longest
+      loadstrings.sort((a, b) => b.length - a.length);
+      nextPayload = loadstrings[0];
+      // if multiple, prefer one that looks like final source
+      for (const ls of loadstrings) {
+        if (looksLikeFinalSource(ls)) { nextPayload = ls; break; }
+      }
+    }
+
+    // also consider big concat/char captures as possible full scripts
+    if (!nextPayload) {
+      let best = null;
+      for (const c of captures) {
+        if (c.str.length >= 80 && (looksLikeFinalSource(c.str) || isOpaquePayload(c.str))) {
+          if (!best || c.str.length > best.length) best = c.str;
+        }
+      }
+      if (best) nextPayload = best;
+    }
+
+    return {
+      ok: status === 0,
+      status: status,
+      captures: captures,
+      loadstrings: loadstrings,
+      nextPayload: nextPayload
+    };
+  }
+
+  function runVM(src) {
+    results = [];
+    finalSource = "";
+    chainDepthReached = 0;
+    log("starting offline Fengari VM (single stage)…", "info");
+    setBar(10);
+    const r = runOneStage(src, 1, { maxDepth: 1 });
+    setBar(100);
+    if (r.nextPayload && looksLikeFinalSource(r.nextPayload)) {
+      finalSource = r.nextPayload;
+      log("captured final-looking payload (" + finalSource.length + " chars)", "ok");
+      $("#btnFinal").disabled = false;
+    } else if (r.nextPayload) {
+      finalSource = r.nextPayload;
+      log("captured nested payload (" + finalSource.length + " chars) — use Auto-Chain to unwrap", "info");
+      $("#btnFinal").disabled = false;
+    }
+    const juicyN = results.filter((x) => x.juicy).length;
+    setStats({ Dec: results.length, J: juicyN });
+    log("VM done — " + results.length + " captured, " + juicyN + " juicy", r.ok ? "ok" : "err");
+    if (r.status !== 0) log("luaL_dostring status=" + r.status, "err");
+    render();
+    $("#btnExport").disabled = false;
+    $("#btnExportJson").disabled = false;
+  }
+
+  function runChain(src) {
+    results = [];
+    finalSource = "";
+    chainDepthReached = 0;
+    const maxDepth = 5;
+    log("Auto-Chain start — max depth " + maxDepth, "info");
+    setBar(5);
+
+    let current = src;
+    let stage = 1;
+    let lastFinal = null;
+    const seenPayloads = new Set();
+
+    while (stage <= maxDepth) {
+      const pct = 5 + Math.floor((90 * (stage - 1)) / maxDepth);
+      setBar(pct);
+      log("[STAGE " + stage + "] executing payload (" + current.length + " chars)…", "info");
+      chainDepthReached = stage;
+
+      // fingerprint to avoid infinite identical loops
+      const fp = current.length + ":" + current.slice(0, 64) + ":" + current.slice(-64);
+      if (seenPayloads.has(fp)) {
+        log("[STAGE " + stage + "] repeated payload — stopping chain", "info");
+        break;
+      }
+      seenPayloads.add(fp);
+
+      const r = runOneStage(current, stage, { maxDepth: maxDepth });
+
+      // prefer final-looking among loadstring captures
+      let candidate = r.nextPayload;
+      if (r.loadstrings && r.loadstrings.length) {
+        for (const ls of r.loadstrings) {
+          if (looksLikeFinalSource(ls)) {
+            candidate = ls;
+            lastFinal = ls;
+            break;
+          }
+        }
+        if (!lastFinal) {
+          // keep longest as progressive unwrap
+          const sorted = r.loadstrings.slice().sort((a, b) => b.length - a.length);
+          candidate = sorted[0];
+        }
+      }
+
+      // direct URL hits in captures count as done
+      const urlHits = r.captures.filter(c => /https?:\/\//i.test(c.str));
+      if (urlHits.length) {
+        log("[STAGE " + stage + "] found " + urlHits.length + " URL(s) — chain complete", "ok");
+        if (candidate && looksLikeFinalSource(candidate)) lastFinal = candidate;
+        else if (candidate) lastFinal = candidate;
+        break;
+      }
+
+      if (candidate && looksLikeFinalSource(candidate)) {
+        log("[STAGE " + stage + "] readable source / loader detected (" + candidate.length + " chars)", "ok");
+        lastFinal = candidate;
+        // one more hop only if it still wraps loadstring(HttpGet) without inlining
+        if (/loadstring\s*\(\s*game\s*:\s*HttpGet/i.test(candidate) && stage < maxDepth) {
+          current = candidate;
+          stage++;
+          continue;
+        }
+        break;
+      }
+
+      if (!candidate) {
+        log("[STAGE " + stage + "] no further loadstring payload — stop", "info");
+        // keep largest juicy capture as final if nothing else
+        if (!lastFinal) {
+          let best = null;
+          for (const c of results) {
+            if (!best || c.str.length > best.length) best = c.str;
+          }
+          if (best && best.length > 40) lastFinal = best;
+        }
+        break;
+      }
+
+      log("[STAGE " + stage + "] chained → next payload " + candidate.length + " chars", "ok");
+      current = candidate;
+      lastFinal = candidate;
+      stage++;
+    }
+
+    if (stage > maxDepth) {
+      log("hit max depth (" + maxDepth + ") — stopping", "info");
+    }
+
+    finalSource = lastFinal || current || "";
+    if (finalSource && finalSource !== src) {
+      // ensure final source is in results
+      const already = results.some(r => r.str === finalSource);
+      if (!already) {
+        results.unshift({
+          index: 1,
+          str: finalSource,
+          score: 2500,
+          method: "CHAIN:final:S" + chainDepthReached,
+          juicy: true,
+          junk: false,
+          stage: chainDepthReached
+        });
+        for (let i = 0; i < results.length; i++) results[i].index = i + 1;
+      }
+      log("final unwrapped source ready (" + finalSource.length + " chars, depth " + chainDepthReached + ")", "ok");
+      $("#btnFinal").disabled = false;
+      // auto-download
+      try {
+        const name = (fileName || "script.lua").replace(/\.\w+$/, "") + "_unwrapped.lua";
+        download(name, finalSource, "text/plain");
+        log("auto-saved " + name, "ok");
+      } catch (e) {
+        log("auto-save failed: " + (e && e.message ? e.message : e), "err");
+      }
+    } else {
+      log("chain finished with no distinct final payload", "info");
+    }
+
     const juicyN = results.filter((x) => x.juicy).length;
     setStats({ Dec: results.length, J: juicyN });
     setBar(100);
-    if (status !== 0) {
-      log("luaL_dostring status=" + status + " (see errors above)", "err");
-    }
-    log("VM done — " + results.length + " captured, " + juicyN + " juicy", "ok");
+    log("Auto-Chain done — " + results.length + " captured, " + juicyN + " juicy, depth " + chainDepthReached, "ok");
     render();
     $("#btnExport").disabled = false;
     $("#btnExportJson").disabled = false;
@@ -1177,6 +1423,7 @@ print("__VM_FINISHED__")
       log("loaded " + fileName + " (" + sourceText.length + " chars)", "ok");
       $("#btnRun").disabled = false;
       $("#btnVM").disabled = false;
+      $("#btnChain").disabled = false;
       $("#verTag").textContent = fileName;
       const F = getFengari();
       log(F ? "Fengari offline VM ready" : "Fengari missing", F ? "ok" : "err");
@@ -1195,22 +1442,43 @@ print("__VM_FINISHED__")
   $("#btnVM").addEventListener("click", () => {
     if (!sourceText) return;
     $("#btnVM").disabled = true;
+    $("#btnChain").disabled = true;
     results = [];
     outEl.innerHTML = "";
     try { runVM(sourceText); }
     catch (e) { log("VM crash: " + (e && e.message ? e.message : e), "err"); console.error(e); }
     $("#btnVM").disabled = false;
+    $("#btnChain").disabled = false;
+  });
+
+  $("#btnChain").addEventListener("click", () => {
+    if (!sourceText) return;
+    $("#btnVM").disabled = true;
+    $("#btnChain").disabled = true;
+    results = [];
+    outEl.innerHTML = "";
+    try { runChain(sourceText); }
+    catch (e) { log("Chain crash: " + (e && e.message ? e.message : e), "err"); console.error(e); }
+    $("#btnVM").disabled = false;
+    $("#btnChain").disabled = false;
+  });
+
+  $("#btnFinal").addEventListener("click", () => {
+    if (!finalSource) return;
+    const name = (fileName || "script.lua").replace(/\.\w+$/, "") + "_unwrapped.lua";
+    download(name, finalSource, "text/plain");
+    log("saved " + name + " (" + finalSource.length + " chars)", "ok");
   });
 
   $("#btnExport").addEventListener("click", exportTxt);
   $("#btnExportJson").addEventListener("click", exportJson);
   $("#btnClear").addEventListener("click", () => {
-    sourceText = ""; results = []; fileName = "";
+    sourceText = ""; results = []; fileName = ""; finalSource = ""; chainDepthReached = 0;
     logEl.innerHTML = ""; outEl.innerHTML = '<div class="empty">no results yet</div>';
     setStats({ C: "—", Sh: "—", P: "—", Dec: "—", J: "—" });
     setBar(0);
-    $("#btnRun").disabled = true; $("#btnVM").disabled = true;
-    $("#btnExport").disabled = true; $("#btnExportJson").disabled = true;
+    $("#btnRun").disabled = true; $("#btnVM").disabled = true; $("#btnChain").disabled = true;
+    $("#btnExport").disabled = true; $("#btnExportJson").disabled = true; $("#btnFinal").disabled = true;
     $("#verTag").textContent = "ready"; fileInput.value = "";
   });
   $("#search").addEventListener("input", render);
