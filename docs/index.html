@@ -1,172 +1,1109 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // STATIC CRACKER</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Luraph V14+ String Deobfuscator — Shiv</title>
 <style>
-  :root { --bg:#050508; --panel:#0d0d12; --border:#1f1f2a; --txt:#d1d1d6; --acc:#00ffcc; --warn:#ffaa00; --err:#ff3366; }
-  body { background:var(--bg); color:var(--txt); font:14px ui-monospace,monospace; padding:16px; margin:0; }
-  h1 { font-size:18px; color:var(--acc); margin:0 0 16px 0; text-transform:uppercase; letter-spacing:2px; }
-  #drop { border:2px dashed var(--border); border-radius:12px; padding:40px 20px; text-align:center; color:#888; margin-bottom:16px; cursor:pointer; background:var(--panel); }
-  #drop.hot { border-color:var(--acc); color:var(--acc); background:rgba(0,255,204,0.05); }
-  #status { color:var(--acc); margin-bottom:12px; font-weight:bold; }
-  #status.err { color:var(--err); }
-  #out { background:#000; border:1px solid var(--border); border-radius:8px; padding:16px; white-space:pre-wrap; word-break:break-all; max-height:65vh; overflow-y:auto; font-size:13px; display:none; }
-  .hit { color:var(--warn); font-weight:bold; display:block; margin:6px 0; padding:10px; background:rgba(255,170,0,0.06); border-left:3px solid var(--warn); border-radius:4px; }
-  input[type=file]{ display:none; }
+:root {
+  --bg: #0d0f14;
+  --panel: #151922;
+  --border: #252b38;
+  --text: #d4d8e0;
+  --muted: #7a8499;
+  --accent: #5b8def;
+  --good: #3dd68c;
+  --warn: #f5c542;
+  --bad: #f07178;
+  --hl: #ffe566;
+  --mono: "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+  --sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.45;
+}
+header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+header h1 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+header .tag {
+  font-size: 0.7rem;
+  background: #1e2a44;
+  color: var(--accent);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-family: var(--mono);
+}
+main {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 20px 24px 60px;
+  display: grid;
+  gap: 18px;
+}
+.drop {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 36px 20px;
+  text-align: center;
+  background: var(--panel);
+  transition: border-color .15s, background .15s;
+  cursor: pointer;
+}
+.drop.over {
+  border-color: var(--accent);
+  background: #1a2233;
+}
+.drop p { color: var(--muted); font-size: 0.95rem; }
+.drop strong { color: var(--text); }
+.drop input { display: none; }
+.row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+button, .btn {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #1c2230;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+button:hover, .btn:hover {
+  background: #252d40;
+  border-color: #3a455c;
+}
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+button.primary:hover { filter: brightness(1.08); }
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.panel-h {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.panel-h h2 {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.stats {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.stats span b { color: var(--text); font-weight: 500; }
+.log {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 10px 14px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.log .ok { color: var(--good); }
+.log .err { color: var(--bad); }
+.log .info { color: var(--accent); }
+.filters {
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+}
+.filters input[type="search"] {
+  flex: 1;
+  min-width: 160px;
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.filters label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.out {
+  max-height: 62vh;
+  overflow-y: auto;
+  padding: 0;
+}
+.str {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 0 10px;
+  padding: 6px 14px;
+  border-bottom: 1px solid #1a1f2a;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  align-items: start;
+}
+.str:hover { background: #1a1f2a; }
+.str .idx {
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  padding-top: 1px;
+}
+.str .val {
+  word-break: break-all;
+  white-space: pre-wrap;
+  color: var(--text);
+}
+.str.juicy .val {
+  background: linear-gradient(90deg, rgba(255,229,102,0.18), transparent 60%);
+  color: var(--hl);
+  font-weight: 500;
+}
+.str.junk .val { color: #4a5366; }
+.str .meta {
+  grid-column: 2;
+  font-size: 0.65rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.progress {
+  height: 3px;
+  background: #1a1f2a;
+  overflow: hidden;
+}
+.progress > div {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width .2s;
+}
+details.tech {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+details.tech summary {
+  cursor: pointer;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+}
+details.tech pre {
+  padding: 0 14px 12px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  color: #8a93a8;
+}
 </style>
 </head>
 <body>
+<header>
+  <h1>Luraph V14+ String Deobfuscator</h1>
+  <span class="tag">static · C / P / shuffle</span>
+  <span class="tag" id="verTag">ready</span>
+</header>
+<main>
+  <div class="drop" id="dropZone">
+    <p><strong>Drop</strong> a .lua / .txt Luraph file here, or <strong>click</strong> to pick</p>
+    <p style="margin-top:8px;font-size:0.8rem">linear scanner · shuffle port · P-table · multi-path decrypt</p>
+    <input type="file" id="fileInput" accept=".lua,.txt,.luau,*">
+  </div>
 
-<h1>VEX // STATIC CRACKER</h1>
-<div id="drop"><b>TAP HERE</b> to load target</div>
-<input type="file" id="fileInput" accept=".txt,.lua">
-<div id="status">waiting...</div>
-<div id="out"></div>
+  <div class="row">
+    <button class="primary" id="btnRun" disabled>Run Deobfuscation</button>
+    <button id="btnExport" disabled>Export TXT</button>
+    <button id="btnExportJson" disabled>Export JSON</button>
+    <button id="btnClear">Clear</button>
+  </div>
+
+  <div class="progress"><div id="bar"></div></div>
+
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Status</h2>
+      <div class="stats" id="stats">
+        <span>C: <b id="sC">—</b></span>
+        <span>Shuffle: <b id="sSh">—</b></span>
+        <span>P: <b id="sP">—</b></span>
+        <span>Decoded: <b id="sDec">—</b></span>
+        <span>Juicy: <b id="sJ">—</b></span>
+      </div>
+    </div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Decrypted Strings</h2>
+      <div class="row">
+        <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="onlyJuicy"> juicy only</label>
+        <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="hideJunk" checked> hide junk</label>
+      </div>
+    </div>
+    <div class="filters">
+      <input type="search" id="search" placeholder="filter strings…">
+    </div>
+    <div class="out" id="out"><div class="empty">no results yet</div></div>
+  </div>
+
+  <details class="tech">
+    <summary>Technical notes</summary>
+    <pre id="techNotes">
+Pipeline:
+1. Linear scan for C table decimal-escape string literals (no catastrophic regex).
+2. Parse ipairs({{a;b};...}) shuffle pairs, evaluate arithmetic, apply 1-based swaps to C.
+3. Parse local P={k=expr,...} into a char→byte map (and reverse).
+4. For each shuffled string:
+   - decode decimal escapes → bytes
+   - try standard Base64 → bytes
+   - apply P-table substitution (forward / reverse)
+   - rolling XOR with key derived from string length, index, and P values
+   - LCG-style stream (Numerical Recipes constants used by several Luraph builds)
+   - score printable ratio + keyword hits; keep best candidate
+5. Highlight http / key / discord / webhook / loadstring / rbx etc.
+
+If the sample uses a different outer envelope (base85+LZMA LPH), run an unpacker first
+and feed the resulting Lua that still contains the C/P/shuffle form.
+    </pre>
+  </details>
+</main>
 
 <script>
-const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
-      st=document.getElementById('status'),out=document.getElementById('out');
+(function () {
+  "use strict";
 
-drop.onclick=()=>fi.click();
-drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('hot')});
-drop.addEventListener('dragleave',()=>drop.classList.remove('hot'));
-drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('hot');if(e.dataTransfer.files.length)load(e.dataTransfer.files[0]);});
-fi.onchange=e=>{if(e.target.files.length)load(e.target.files[0]);};
+  const $ = (s) => document.querySelector(s);
+  const logEl = $("#log");
+  const outEl = $("#out");
+  const bar = $("#bar");
+  let sourceText = "";
+  let results = [];
+  let fileName = "";
 
-function log(msg,isErr){
-  st.textContent=msg;
-  st.className = isErr ? 'err' : '';
-}
+  const JUICY_RE = /https?:\/\/|discord(?:app)?\.com|webhook|loadstring|getfenv|setfenv|HttpService|RequestAsync|api[_-]?key|secret|token|password|rbxassetid|game:GetService|Players\.LocalPlayer|FireServer|InvokeServer|RemoteEvent|RemoteFunction|MarketplaceService|PromptGamePass|key\s*[=:]|auth|bearer|authorization|pastebin|raw\.githubusercontent|bit\.ly|discord\.gg/i;
 
-function load(file){
-  log(`reading ${file.name}...`); out.style.display='none'; out.innerHTML='';
-  const r=new FileReader();
-  r.onload=e=>setTimeout(()=>process(e.target.result),50);
-  r.readAsText(file);
-}
-
-function decEsc(lit){
-  const o=[];let i=0;
-  while(i<lit.length){
-    if(lit[i]==='\\'){
-      const m=/^\d{1,3}/.exec(lit.slice(i+1));
-      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
-      const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
-      if(esc!==undefined){o.push(esc);i+=2;continue;}
-      i+=2;continue;
-    }
-    o.push(lit.charCodeAt(0)&255);i++;
+  function log(msg, cls) {
+    const line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
   }
-  return Uint8Array.from(o);
-}
 
-function toStr(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return s; }
+  function setBar(p) {
+    bar.style.width = Math.max(0, Math.min(100, p)) + "%";
+  }
 
-function process(src){
-  try{
-    log(`loaded: ${src.length} bytes. extracting...`);
-    
-    // 1. Extract C Table
-    const i = src.indexOf('local C');
-    if(i<0) throw new Error('No local C table');
-    let b = src.indexOf('{', i);
-    let depth=0, end=-1;
-    for(let j=b;j<src.length;j++){
-      const c=src[j];
-      if(c==='{')depth++;
-      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
-      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
+  function setStats(o) {
+    if (o.C != null) $("#sC").textContent = o.C;
+    if (o.Sh != null) $("#sSh").textContent = o.Sh;
+    if (o.P != null) $("#sP").textContent = o.P;
+    if (o.Dec != null) $("#sDec").textContent = o.Dec;
+    if (o.J != null) $("#sJ").textContent = o.J;
+  }
+
+  // ---------- arithmetic evaluator for Luraph constant expressions ----------
+  // Handles: 333134+-333133 , 9762+-9702 , 785533-785516 , unary +/-
+  function evalExpr(s) {
+    s = String(s).replace(/\s+/g, "");
+    // Normalize "a+-b" → "a+(-b)" style by converting +- to -
+    s = s.replace(/\+\-/g, "-").replace(/\-\+/g, "-").replace(/\-\-/g, "+").replace(/\+\+/g, "+");
+    // Only digits and + -
+    if (!/^[+\-]?\d+([+\-]\d+)*$/.test(s)) {
+      // try simple Number
+      const n = Number(s);
+      if (!Number.isNaN(n)) return n | 0;
+      return 0;
     }
-    const table = src.slice(b+1,end);
-    const lits=[]; let k=0;
-    while(k<table.length){
-      if(table[k]==='"'){
-        let j=k+1, buf='';
-        while(j<table.length){
-          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
-          if(table[j]==='"')break;
-          buf+=table[j];j++;
-        }
-        lits.push(buf); k=j+1;
-      } else k++;
-    }
-    let C = lits.map(decEsc);
-    log(`extracted ${C.length} strings.`);
-
-    // 2. Parse Shuffle Triples
-    // Pattern: {val, val, val}, {val, val, val}, ...
-    const triMatch = /for\s+h,v\s+in\s+ipairs\(\{(.*?)\}\)\s*do/s.exec(src);
-    if(triMatch) {
-        log('Parsing shuffle triples...');
-        const rawTris = triMatch[1];
-        const tris = [];
-        const blockRe = /\{([^{}]+)\}/g;
-        let m;
-        while((m = blockRe.exec(rawTris)) !== null) {
-            const parts = m[1].split(/[;,]/);
-            if(parts.length >= 3) {
-                // Evaluate math (safe because it's just numbers)
-                const vals = parts.map(p => {
-                    try { return eval(p); } catch(e) { return 0; }
-                });
-                if(vals.length >= 3) tris.push([vals[0], vals[1], vals[2]]);
-            }
-        }
-        log(`Applying ${tris.length} shuffle operations...`);
-        
-        // Lua: C[v0],C[v1],v0,v1 = C[v1],C[v2],v0+1,v1-1
-        for(let t=0; t<tris.length; t++) {
-            let v0 = tris[t][0] - 1;
-            let v1 = tris[t][1] - 1;
-            const v2 = tris[t][2] - 1;
-            while(v0 < v1) {
-                if(v0 >= 0 && v0 < C.length && v1 >= 0 && v1 < C.length) {
-                    let tmp = C[v1]; C[v1] = C[v0]; C[v0] = tmp;
-                    v0++; v1--;
-                } else break;
-            }
-        }
-    } else {
-        log('No shuffle triples found. Skipping shuffle.');
-    }
-
-    // 3. Decode
-    log('Decoding...');
-    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
-    let hits=0, outHtml='';
-
-    C.forEach((u8, idx) => {
-      let rawStr = toStr(u8);
-      let b64Str = null;
-      
-      try {
-        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
-        while(s.length % 4) s += '=';
-        b64Str = atob(s);
-      } catch(e) {}
-
-      // Check b64
-      if (b64Str && juicy.test(b64Str)) {
-        outHtml += `<span class="hit">[${idx}] ${b64Str}</span>`;
-        hits++;
-      } 
-      // Check raw
-      else if (juicy.test(rawStr)) {
-        outHtml += `<span class="hit">[${idx}] RAW: ${rawStr}</span>`;
-        hits++;
+    let i = 0;
+    let sign = 1;
+    if (s[i] === "+") i++;
+    else if (s[i] === "-") { sign = -1; i++; }
+    let acc = 0;
+    let cur = 0;
+    let curSign = sign;
+    while (i < s.length) {
+      const c = s[i];
+      if (c >= "0" && c <= "9") {
+        cur = cur * 10 + (c.charCodeAt(0) - 48);
+        i++;
+      } else if (c === "+" || c === "-") {
+        acc += curSign * cur;
+        cur = 0;
+        curSign = c === "+" ? 1 : -1;
+        i++;
+      } else {
+        i++;
       }
-    });
-
-    out.innerHTML = outHtml || '<div style="color:#888">no hits.</div>';
-    out.style.display = 'block';
-    log(`done. ${hits} hits.`);
-
-  } catch(e) {
-    log('CRASH: '+e.message, true);
+    }
+    acc += curSign * cur;
+    return acc | 0;
   }
-}
+
+  // ---------- linear scanner: extract C table decimal-escape strings ----------
+  // Looks for patterns like "\049\107\110..." without catastrophic backtracking.
+  function extractCTable(src) {
+    const strings = [];
+    const n = src.length;
+    let i = 0;
+
+    // Prefer locating "local C={" or "C={" near the start of the payload.
+    let startHint = src.indexOf("local C=");
+    if (startHint < 0) startHint = src.indexOf("C={");
+    if (startHint < 0) startHint = 0;
+
+    // Scan from hint, but also allow full file if needed.
+    const scanStart = Math.max(0, startHint - 64);
+    i = scanStart;
+
+    while (i < n) {
+      // Fast path: look for quote then backslash digit
+      if (src[i] === '"' || src[i] === "'") {
+        const q = src[i];
+        const start = i;
+        i++;
+        // Must start with \ddd style to count as Luraph encrypted literal
+        if (src[i] === "\\" && src[i + 1] >= "0" && src[i + 1] <= "9") {
+          const bytes = [];
+          let ok = true;
+          while (i < n && src[i] !== q) {
+            if (src[i] === "\\" && i + 1 < n) {
+              const c1 = src[i + 1];
+              if (c1 >= "0" && c1 <= "9") {
+                // decimal escape: \d, \dd, or \ddd (Lua style, max 3 digits)
+                let digits = c1;
+                let j = i + 2;
+                if (j < n && src[j] >= "0" && src[j] <= "9") {
+                  digits += src[j];
+                  j++;
+                  if (j < n && src[j] >= "0" && src[j] <= "9") {
+                    digits += src[j];
+                    j++;
+                  }
+                }
+                const v = parseInt(digits, 10);
+                if (v > 255) {
+                  // Lua allows \ddd up to 255; if higher, still take low byte or reject
+                  bytes.push(v & 0xff);
+                } else {
+                  bytes.push(v);
+                }
+                i = j;
+                continue;
+              }
+              // other escapes
+              const map = { n: 10, r: 13, t: 9, a: 7, b: 8, f: 12, v: 11, '"': 34, "'": 39, "\\": 92 };
+              if (map[c1] != null) {
+                bytes.push(map[c1]);
+                i += 2;
+                continue;
+              }
+              if (c1 === "x" && i + 3 < n) {
+                const hx = src.substr(i + 2, 2);
+                if (/^[0-9a-fA-F]{2}$/.test(hx)) {
+                  bytes.push(parseInt(hx, 16));
+                  i += 4;
+                  continue;
+                }
+              }
+              // unknown escape — take next char
+              bytes.push(src.charCodeAt(i + 1) & 0xff);
+              i += 2;
+              continue;
+            }
+            // plain char inside the string (rare for these literals)
+            bytes.push(src.charCodeAt(i) & 0xff);
+            i++;
+          }
+          if (i < n && src[i] === q && bytes.length >= 4) {
+            strings.push(bytes);
+            i++; // consume closing quote
+            continue;
+          }
+          // failed parse — reset to after opening quote
+          i = start + 1;
+          continue;
+        }
+        // not a decimal-escape string — skip to close of quote (simple)
+        while (i < n && src[i] !== q) {
+          if (src[i] === "\\" && i + 1 < n) i += 2;
+          else i++;
+        }
+        if (i < n) i++;
+        continue;
+      }
+      i++;
+    }
+
+    // Dedup consecutive identical (sometimes C is built twice) — keep unique by content
+    // but preserve order; only drop exact consecutive dups
+    const deduped = [];
+    let prevKey = null;
+    for (const b of strings) {
+      const k = b.length + ":" + b.slice(0, 8).join(",") + ":" + b.slice(-4).join(",");
+      if (k === prevKey) continue;
+      prevKey = k;
+      deduped.push(b);
+    }
+    return deduped.length ? deduped : strings;
+  }
+
+  // ---------- parse shuffle: for h,v in ipairs({{a;b};{c;d};...}) ----------
+  function extractShuffle(src) {
+    const pairs = [];
+    // Locate ipairs({{ pattern
+    const markers = ["ipairs({{", "ipairs( { {", "ipairs({\n{"];
+    let idx = -1;
+    let marker = "";
+    for (const m of markers) {
+      idx = src.indexOf(m);
+      if (idx >= 0) {
+        marker = m;
+        break;
+      }
+    }
+    if (idx < 0) {
+      // looser: ipairs then {{ within 40 chars
+      const re = /ipairs\s*\(\s*\{/;
+      const m = re.exec(src);
+      if (!m) return pairs;
+      idx = m.index;
+      // find first {{ after
+      const sub = src.slice(idx, idx + 200);
+      const br = sub.indexOf("{{");
+      if (br < 0) return pairs;
+      idx = idx + br;
+    } else {
+      idx = idx + marker.indexOf("{{");
+    }
+
+    // From idx pointing at first '{', parse nested table of {expr;expr} or {expr,expr}
+    // Linear brace walk
+    let depth = 0;
+    let i = idx;
+    const n = src.length;
+    let tableStart = -1;
+    while (i < n) {
+      const c = src[i];
+      if (c === "{") {
+        if (depth === 0) tableStart = i;
+        depth++;
+      } else if (c === "}") {
+        depth--;
+        if (depth === 0) {
+          // finished outer table
+          const body = src.slice(tableStart + 1, i);
+          // split into pair bodies: look for { ... }
+          let j = 0;
+          while (j < body.length) {
+            if (body[j] === "{") {
+              let d = 1;
+              let k = j + 1;
+              while (k < body.length && d > 0) {
+                if (body[k] === "{") d++;
+                else if (body[k] === "}") d--;
+                k++;
+              }
+              const pairBody = body.slice(j + 1, k - 1);
+              // split on ; or ,
+              const parts = pairBody.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+              if (parts.length >= 2) {
+                const a = evalExpr(parts[0]);
+                const b = evalExpr(parts[1]);
+                if (a !== 0 || b !== 0) pairs.push([a, b]);
+              }
+              j = k;
+              continue;
+            }
+            j++;
+          }
+          break;
+        }
+      }
+      i++;
+      // safety
+      if (i - idx > 2_000_000) break;
+    }
+    return pairs;
+  }
+
+  function applyShuffle(C, pairs) {
+    // Lua is 1-based. pairs are (i, j) swaps or assignment style.
+    // Common Luraph form: for h,v in ipairs({{i;j};...}) do C[h], C[v] = C[v], C[h] end
+    // or C[h] = C[v] depending on exact sample. We support swap.
+    const arr = C.slice();
+    for (const [a, b] of pairs) {
+      const i = a | 0;
+      const j = b | 0;
+      if (i >= 1 && i <= arr.length && j >= 1 && j <= arr.length) {
+        const tmp = arr[i - 1];
+        arr[i - 1] = arr[j - 1];
+        arr[j - 1] = tmp;
+      }
+    }
+    return arr;
+  }
+
+  // ---------- P-table ----------
+  function extractPTable(src) {
+    const map = Object.create(null); // char -> number
+    let idx = src.indexOf("local P=");
+    if (idx < 0) idx = src.indexOf("P={");
+    if (idx < 0) return map;
+
+    // find opening {
+    let brace = src.indexOf("{", idx);
+    if (brace < 0) return map;
+    let depth = 0;
+    let i = brace;
+    const n = src.length;
+    let end = -1;
+    while (i < n) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+      i++;
+      if (i - brace > 500000) break;
+    }
+    if (end < 0) return map;
+    const body = src.slice(brace + 1, end);
+
+    // entries: key=expr  key can be letter, number, or ["x"]
+    // linear scan
+    let j = 0;
+    while (j < body.length) {
+      // skip whitespace and commas
+      while (j < body.length && /[\s,]/.test(body[j])) j++;
+      if (j >= body.length) break;
+
+      let key = null;
+      if (body[j] === "[" ) {
+        // ["a"] or [97]
+        const close = body.indexOf("]", j);
+        if (close < 0) break;
+        const inner = body.slice(j + 1, close).trim();
+        if ((inner[0] === '"' || inner[0] === "'") && inner.length >= 3) {
+          key = inner[1];
+        } else {
+          const num = evalExpr(inner);
+          key = String.fromCharCode(num & 0xff);
+        }
+        j = close + 1;
+      } else if (/[A-Za-z_]/.test(body[j])) {
+        key = body[j];
+        j++;
+      } else {
+        j++;
+        continue;
+      }
+
+      // expect =
+      while (j < body.length && /\s/.test(body[j])) j++;
+      if (body[j] !== "=") continue;
+      j++;
+      while (j < body.length && /\s/.test(body[j])) j++;
+
+      // expression until , or }
+      let exprStart = j;
+      let d = 0;
+      while (j < body.length) {
+        const c = body[j];
+        if (c === "{" || c === "(") d++;
+        else if (c === "}" || c === ")") {
+          if (d === 0) break;
+          d--;
+        } else if (c === "," && d === 0) break;
+        j++;
+      }
+      const expr = body.slice(exprStart, j).trim();
+      if (key != null && expr) {
+        map[key] = evalExpr(expr) & 0xff;
+      }
+      if (body[j] === ",") j++;
+    }
+    return map;
+  }
+
+  // ---------- Base64 ----------
+  const B64 =
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  function b64Decode(bytes) {
+    // bytes is array of char codes that form a base64 string
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    s = s.replace(/[^A-Za-z0-9+/=]/g, "");
+    if (s.length < 4) return null;
+    const out = [];
+    let i = 0;
+    while (i < s.length) {
+      const e1 = B64.indexOf(s[i++]);
+      const e2 = B64.indexOf(s[i++]);
+      const e3 = B64.indexOf(s[i++]);
+      const e4 = B64.indexOf(s[i++]);
+      if (e1 < 0 || e2 < 0) break;
+      out.push(((e1 << 2) | (e2 >> 4)) & 0xff);
+      if (e3 >= 0) out.push((((e2 & 15) << 4) | (e3 >> 2)) & 0xff);
+      if (e4 >= 0) out.push((((e3 & 3) << 6) | e4) & 0xff);
+    }
+    return out;
+  }
+
+  function bytesToLatin1(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] & 0xff);
+    return s;
+ }
+
+  function isPrintable(c) {
+    return (c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13;
+  }
+
+  function scoreString(s) {
+    if (!s || !s.length) return -1e9;
+    let printable = 0;
+    let bad = 0;
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (isPrintable(c)) printable++;
+      else if (c === 0) bad += 2;
+      else bad++;
+    }
+    const ratio = printable / s.length;
+    let score = ratio * 100 - bad * 2;
+    if (JUICY_RE.test(s)) score += 80;
+    // prefer mostly ASCII words
+    if (/[A-Za-z]{3,}/.test(s)) score += 15;
+    if (ratio < 0.55) score -= 40;
+    return score;
+  }
+
+  // ---------- decryption attempts ----------
+  function applyPMap(bytes, pMap, reverse) {
+    if (!pMap || !Object.keys(pMap).length) return bytes.slice();
+    // Build forward: charCode → mapped byte, and inverse
+    const fwd = new Uint8Array(256);
+    const inv = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) {
+      fwd[i] = i;
+      inv[i] = i;
+    }
+    for (const k of Object.keys(pMap)) {
+      const from = k.charCodeAt(0) & 0xff;
+      const to = pMap[k] & 0xff;
+      fwd[from] = to;
+      inv[to] = from;
+    }
+    const table = reverse ? inv : fwd;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = table[bytes[i] & 0xff];
+    return out;
+  }
+
+  function rollingXor(bytes, keyBytes) {
+    const out = new Array(bytes.length);
+    const kl = keyBytes.length || 1;
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = (bytes[i] ^ keyBytes[i % kl]) & 0xff;
+    }
+    return out;
+  }
+
+  function rollingXorState(bytes, seed) {
+    // LCG Numerical Recipes: seed = seed * 1664525 + 1013904223
+    let s = (seed >>> 0) || 1;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+      const kb = (s >>> 16) & 0xff;
+      out[i] = (bytes[i] ^ kb) & 0xff;
+    }
+    return out;
+  }
+
+  function rollingXorAcc(bytes, seed) {
+    // simple accumulating XOR stream
+    let k = seed & 0xff;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = (bytes[i] ^ k) & 0xff;
+      k = (k + bytes[i] + 1) & 0xff;
+    }
+    return out;
+  }
+
+  function singleByteXorBrute(bytes) {
+    let best = null;
+    let bestScore = -1e9;
+    for (let key = 0; key < 256; key++) {
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ key) & 0xff;
+      const s = bytesToLatin1(out);
+      const sc = scoreString(s);
+      if (sc > bestScore) {
+        bestScore = sc;
+        best = { bytes: out, str: s, score: sc, method: "xor" + key };
+      }
+    }
+    return best;
+  }
+
+  function deriveKeyCandidates(pMap, index, len) {
+    const keys = [];
+    // from P values
+    const pVals = Object.keys(pMap).map((k) => pMap[k] & 0xff);
+    if (pVals.length) {
+      keys.push(pVals);
+      keys.push(pVals.slice().reverse());
+      // first 8 / 16
+      if (pVals.length >= 8) keys.push(pVals.slice(0, 8));
+      if (pVals.length >= 16) keys.push(pVals.slice(0, 16));
+    }
+    // index / length based
+    keys.push([(index * 31 + len) & 0xff]);
+    keys.push([len & 0xff, index & 0xff]);
+    keys.push([0x5a, 0xa5, 0x3c, 0xc3]);
+    // P char codes
+    const pChars = Object.keys(pMap).map((k) => k.charCodeAt(0) & 0xff);
+    if (pChars.length) keys.push(pChars);
+    return keys;
+  }
+
+  function decryptOne(rawBytes, pMap, index) {
+    const candidates = [];
+
+    function consider(bytes, method) {
+      if (!bytes || !bytes.length) return;
+      const s = bytesToLatin1(bytes);
+      const sc = scoreString(s);
+      candidates.push({ bytes, str: s, score: sc, method });
+    }
+
+    // 1) raw as latin1
+    consider(rawBytes, "raw");
+
+    // 2) base64 of raw
+    const b64 = b64Decode(rawBytes);
+    if (b64) {
+      consider(b64, "b64");
+      // P on b64
+      consider(applyPMap(b64, pMap, false), "b64+P");
+      consider(applyPMap(b64, pMap, true), "b64+Pinv");
+    }
+
+    // 3) P on raw
+    const pFwd = applyPMap(rawBytes, pMap, false);
+    const pInv = applyPMap(rawBytes, pMap, true);
+    consider(pFwd, "P");
+    consider(pInv, "Pinv");
+
+    // 4) rolling XOR variants
+    const keyCands = deriveKeyCandidates(pMap, index, rawBytes.length);
+    for (const kb of keyCands) {
+      consider(rollingXor(rawBytes, kb), "rxor");
+      if (b64) consider(rollingXor(b64, kb), "b64+rxor");
+      consider(rollingXor(pFwd, kb), "P+rxor");
+      consider(rollingXor(pInv, kb), "Pinv+rxor");
+    }
+
+    // 5) LCG stream with several seeds
+    const seeds = [
+      rawBytes.length,
+      index + 1,
+      (index + 1) * 2654435761,
+      0xdeadbeef,
+      0x12345678,
+      Object.keys(pMap).length,
+    ];
+    for (const seed of seeds) {
+      consider(rollingXorState(rawBytes, seed), "lcg");
+      if (b64) consider(rollingXorState(b64, seed), "b64+lcg");
+      consider(rollingXorState(pInv, seed), "Pinv+lcg");
+    }
+
+    // 6) accumulating xor
+    for (const seed of [0, 1, index, rawBytes.length & 0xff]) {
+      consider(rollingXorAcc(rawBytes, seed), "acc");
+      if (b64) consider(rollingXorAcc(b64, seed), "b64+acc");
+    }
+
+    // 7) single-byte brute on short strings only
+    if (rawBytes.length <= 48) {
+      const brute = singleByteXorBrute(b64 || rawBytes);
+      if (brute) candidates.push(brute);
+    }
+
+    // pick best
+    candidates.sort((a, b) => b.score - a.score);
+    return candidates[0] || { str: bytesToLatin1(rawBytes), score: -1e9, method: "raw", bytes: rawBytes };
+  }
+
+  // ---------- main pipeline ----------
+  function run(src) {
+    results = [];
+    logEl.innerHTML = "";
+    setBar(5);
+    log("scanning C table…", "info");
+
+    const C = extractCTable(src);
+    setStats({ C: C.length });
+    log("C entries: " + C.length, C.length ? "ok" : "err");
+    if (!C.length) {
+      log("no decimal-escape strings found. is this the right form?", "err");
+      setBar(0);
+      return;
+    }
+    setBar(20);
+
+    log("parsing shuffle…", "info");
+    const pairs = extractShuffle(src);
+    setStats({ Sh: pairs.length });
+    log("shuffle pairs: " + pairs.length, pairs.length ? "ok" : "info");
+    setBar(35);
+
+    const shuffled = pairs.length ? applyShuffle(C, pairs) : C.slice();
+    if (pairs.length) log("shuffle applied", "ok");
+
+    log("parsing P table…", "info");
+    const pMap = extractPTable(src);
+    const pCount = Object.keys(pMap).length;
+    setStats({ P: pCount });
+    log("P entries: " + pCount, pCount ? "ok" : "info");
+    if (pCount) {
+      const sample = Object.keys(pMap)
+        .slice(0, 8)
+        .map((k) => k + "=" + pMap[k])
+        .join(", ");
+      log("P sample: " + sample, "info");
+    }
+    setBar(45);
+
+    log("decrypting " + shuffled.length + " strings…", "info");
+    const decoded = [];
+    let juicy = 0;
+    const total = shuffled.length;
+    const chunk = Math.max(1, Math.floor(total / 40));
+
+    for (let i = 0; i < total; i++) {
+      const best = decryptOne(shuffled[i], pMap, i);
+      const isJuicy = JUICY_RE.test(best.str);
+      if (isJuicy) juicy++;
+      decoded.push({
+        index: i + 1,
+        str: best.str,
+        score: best.score,
+        method: best.method,
+        juicy: isJuicy,
+        junk: best.score < 20,
+      });
+      if (i % chunk === 0) {
+        setBar(45 + (50 * i) / total);
+      }
+    }
+
+    results = decoded;
+    setStats({ Dec: decoded.length, J: juicy });
+    setBar(100);
+    log(
+      "done — " + decoded.length + " strings, " + juicy + " juicy hits",
+      "ok"
+    );
+    render();
+    $("#btnExport").disabled = false;
+    $("#btnExportJson").disabled = false;
+  }
+
+  function render() {
+    const q = ($("#search").value || "").toLowerCase();
+    const onlyJ = $("#onlyJuicy").checked;
+    const hideJunk = $("#hideJunk").checked;
+
+    const frag = document.createDocumentFragment();
+    let shown = 0;
+    for (const r of results) {
+      if (onlyJ && !r.juicy) continue;
+      if (hideJunk && r.junk && !r.juicy) continue;
+      if (q && r.str.toLowerCase().indexOf(q) < 0) continue;
+      const row = document.createElement("div");
+      row.className = "str" + (r.juicy ? " juicy" : r.junk ? " junk" : "");
+      const idx = document.createElement("div");
+      idx.className = "idx";
+      idx.textContent = r.index;
+      const val = document.createElement("div");
+      val.className = "val";
+      val.textContent = r.str;
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent =
+        r.method + " · score " + Math.round(r.score) + (r.juicy ? " · JUICY" : "");
+      row.appendChild(idx);
+      row.appendChild(val);
+      row.appendChild(meta);
+      frag.appendChild(row);
+      shown++;
+    }
+    outEl.innerHTML = "";
+    if (!shown) {
+      outEl.innerHTML = '<div class="empty">no matching strings</div>';
+    } else {
+      outEl.appendChild(frag);
+    }
+  }
+
+  function exportTxt() {
+    const lines = results.map(
+      (r) =>
+        "[" +
+        r.index +
+        "] " +
+        (r.juicy ? "* " : "  ") +
+        r.str.replace(/\r?\n/g, "\\n")
+    );
+    download(
+      fileName.replace(/\.\w+$/, "") + "_strings.txt",
+      lines.join("\n"),
+      "text/plain"
+    );
+  }
+
+  function exportJson() {
+    download(
+      fileName.replace(/\.\w+$/, "") + "_strings.json",
+      JSON.stringify(results, null, 2),
+      "application/json"
+    );
+  }
+
+  function download(name, data, type) {
+    const blob = new Blob([data], { type });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ---------- UI wiring ----------
+  const drop = $("#dropZone");
+  const fileInput = $("#fileInput");
+
+  drop.addEventListener("click", () => fileInput.click());
+  drop.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    drop.classList.add("over");
+  });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault();
+    drop.classList.remove("over");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      loadFile(e.dataTransfer.files[0]);
+    }
+  });
+  fileInput.addEventListener("change", () => {
+    if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+  });
+
+  function loadFile(f) {
+    fileName = f.name || "script.lua";
+    const reader = new FileReader();
+    reader.onload = () => {
+      sourceText = String(reader.result || "");
+      log("loaded " + fileName + " (" + sourceText.length + " chars)", "ok");
+      $("#btnRun").disabled = false;
+      $("#verTag").textContent = fileName;
+    };
+    reader.onerror = () => log("read failed", "err");
+    reader.readAsText(f);
+  }
+
+  $("#btnRun").addEventListener("click", () => {
+    if (!sourceText) return;
+    $("#btnRun").disabled = true;
+    try {
+      run(sourceText);
+    } catch (e) {
+      log("fatal: " + (e && e.message ? e.message : e), "err");
+      console.error(e);
+    }
+    $("#btnRun").disabled = false;
+  });
+  $("#btnExport").addEventListener("click", exportTxt);
+  $("#btnExportJson").addEventListener("click", exportJson);
+  $("#btnClear").addEventListener("click", () => {
+    sourceText = "";
+    results = [];
+    fileName = "";
+    logEl.innerHTML = "";
+    outEl.innerHTML = '<div class="empty">no results yet</div>';
+    setStats({ C: "—", Sh: "—", P: "—", Dec: "—", J: "—" });
+    setBar(0);
+    $("#btnRun").disabled = true;
+    $("#btnExport").disabled = true;
+    $("#btnExportJson").disabled = true;
+    $("#verTag").textContent = "ready";
+    fileInput.value = "";
+  });
+  $("#search").addEventListener("input", render);
+  $("#onlyJuicy").addEventListener("change", render);
+  $("#hideJunk").addEventListener("change", render);
+})();
 </script>
 </body>
 </html>
+  
