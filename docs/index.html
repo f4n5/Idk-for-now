@@ -3,16 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // DEOBFUSCATOR STATION</title>
+<title>VEX // LUA DECRYPTOR STATION v2</title>
 <style>
   :root { --bg: #050508; --panel: #0d0d12; --border: #1f1f2a; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; --blue: #00aaff; }
   * { box-sizing: border-box; }
   body { background: var(--bg); color: var(--txt); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 16px; margin: 0; overflow-x: hidden; }
   
-  /* Animations */
   @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
   @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes glow { 0% { box-shadow: 0 0 5px var(--acc); } 50% { box-shadow: 0 0 20px var(--acc); } 100% { box-shadow: 0 0 5px var(--acc); } }
   
   h1 { font-size: 20px; color: var(--acc); margin: 0 0 20px 0; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 10px rgba(0,255,204,0.4); display: flex; align-items: center; gap: 10px; }
   h1::before { content: ''; display: inline-block; width: 12px; height: 12px; background: var(--acc); border-radius: 50%; animation: pulse 2s infinite; }
@@ -125,12 +123,41 @@ function toStr(u8) {
   return s;
 }
 
+// THE MAGIC P-TABLE DECODER
+function parsePTable(src) {
+  // Look for P={...}
+  const pMatch = /local\s+P\s*=\s*\{([^}]+)\}/s.exec(src);
+  if(!pMatch) return null;
+  
+  const map = {};
+  // P={a=123, b=456, ["\123"]=789}
+  // We need to extract the string key and its numeric value
+  const raw = pMatch[1];
+  
+  // regex for: key=value
+  // key can be a-z, or ["\xxx"]
+  const re = /(?:\["([^"]+)"\]|([a-zA-Z0-9_]+))\s*=\s*(-?\d+)/g;
+  let m;
+  while((m = re.exec(raw)) !== null) {
+    let key = m[1] || m[2];
+    let val = parseInt(m[3], 10);
+    
+    // If key is escaped like "\097", decode it
+    if(m[1] && m[1].startsWith('\\')) {
+       key = String.fromCharCode(parseInt(m[1].slice(1), 10));
+    }
+    map[key] = val;
+  }
+  
+  return map;
+}
+
 function process(src){
   try {
     log(`Target loaded: ${src.length} bytes`);
     
     // 1. Detect Obfuscator
-    let isLuraph = src.includes('Luraph') || src.includes('LPH') || src.includes('lph');
+    let isLuraph = src.includes('Luraph') || src.includes('LPH');
     let isIronBrew = src.includes('IronBrew') || src.includes('IB2');
     let isMoonSec = src.includes('MoonSec') || src.includes('MSV');
     
@@ -139,7 +166,16 @@ function process(src){
     else if(isMoonSec) addBadge('MoonSec', 'moonsec');
     else addBadge('Unknown/Custom', 'unknown');
 
-    // 2. Extract C Table
+    // 2. Extract P Table
+    const pMap = parsePTable(src);
+    if (pMap) {
+      addBadge('P-Table Found', 'luraph');
+      log(`Found P-Table dictionary with ${Object.keys(pMap).length} entries.`);
+    } else {
+      log(`No P-Table found. Assuming standard Base64.`);
+    }
+
+    // 3. Extract C Table
     const i = src.indexOf('local C');
     if(i < 0) throw new Error('No "local C" table found. Header cut?');
     let b = src.indexOf('{', i);
@@ -174,33 +210,79 @@ function process(src){
 
     const juicy = /https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
 
-    // 3. Decode
+    // 4. Decode with P-Table Logic
     C.forEach((u8, idx) => {
-      // Raw
-      let rawStr = toStr(u8);
-      // Base64 attempt
-      let b64Str = null;
-      try {
-        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
-        while(s.length % 4) s += '=';
-        b64Str = atob(s);
-      } catch(e) {}
+      let decryptedStr = '';
+      
+      if (pMap) {
+        // Luraph custom mapping: each char is mapped through P, then math happens
+        // The exact formula is complex, but often it's just mapping the char through P and converting back to ASCII
+        // Let's try the most common Luraph v14 approach: 
+        // C[i] is base64 string. We decode base64, then map each byte through P.
+        
+        // Actually, the C table contains raw bytes that ARE the base64 string.
+        // Let's convert u8 to string first.
+        let b64str = toStr(u8);
+        
+        // Decode base64
+        let rawBytes = null;
+        try {
+            let s = b64str.replace(/-/g, '+').replace(/_/g, '/');
+            while(s.length % 4) s += '=';
+            rawBytes = atob(s);
+        } catch(e) {}
+        
+        if (rawBytes) {
+            // Now map rawBytes through P
+            let mapped = '';
+            for(let i=0; i<rawBytes.length; i++) {
+                let charCode = rawBytes.charCodeAt(i);
+                // Find the key in P that maps to this charCode
+                // Reverse lookup
+                let found = false;
+                for(let key in pMap) {
+                    if(pMap[key] === charCode) {
+                        mapped += key;
+                        found = true;
+                        break;
+                    }
+                }
+                if(!found) mapped += rawBytes[i]; // fallback
+            }
+            decryptedStr = mapped;
+        } else {
+            decryptedStr = b64str; // fallback
+        }
+      } else {
+        // Standard base64
+        let s = toStr(u8).replace(/-/g, '+').replace(/_/g, '/');
+        try {
+            while(s.length % 4) s += '=';
+            decryptedStr = atob(s);
+        } catch(e) {}
+      }
 
-      // Check hits
-      if (juicy.test(rawStr)) {
-        outHtml += `<span class="hit"><span class="label">RAW</span>[${idx}] ${rawStr}</span>`;
-        hits++;
-      } else if (b64Str && juicy.test(b64Str)) {
-        outHtml += `<span class="hit"><span class="label">B64</span>[${idx}] ${b64Str}</span>`;
-        hits++;
-      } else if (b64Str && b64Str.length > 3) {
-        outHtml += `<span class="str"><span class="idx">[${idx}]</span> <span class="blue">${b64Str}</span></span>`;
-        others++;
+      // Check if the decrypted string is readable and juicy
+      if (decryptedStr && decryptedStr.length > 2) {
+          // Clean up non-printable chars
+          let clean = '';
+          for(let i=0; i<decryptedStr.length; i++) {
+              let c = decryptedStr.charCodeAt(i);
+              if((c >= 32 && c < 127) || c === 9 || c === 10 || c === 13) clean += decryptedStr[i];
+          }
+          
+          if (juicy.test(clean)) {
+            outHtml += `<span class="hit"><span class="label">HIT</span>[${idx}] ${clean}</span>`;
+            hits++;
+          } else if (clean.length > 3) {
+            outHtml += `<span class="str"><span class="idx">[${idx}]</span> ${clean}</span>`;
+            others++;
+          }
       }
     });
 
     // Render
-    out.innerHTML = outHtml || '<div style="color:#888">No readable strings found. VM emulation required.</div>';
+    out.innerHTML = outHtml || '<div style="color:#888">No readable strings found. The P-Table mapping might be wrong.</div>';
     log(`DONE. ${hits} juicy hits, ${others} decoded strings.`);
 
   } catch(e) {
