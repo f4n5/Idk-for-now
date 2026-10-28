@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph V14+ String Deobfuscator — Shiv</title>
+<title>Luraph V14+ String Deobfuscator — Shiv · URL/Loadstring</title>
 <style>
 :root {
   --bg: #0d0f14;
@@ -202,7 +202,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
 <body>
 <header>
   <h1>Luraph V14+ String Deobfuscator</h1>
-  <span class="tag">static · C / P / shuffle</span>
+  <span class="tag">static · C / P / shuffle · URL harvest</span>
   <span class="tag">fengari offline</span>
   <span class="tag" id="verTag">ready</span>
 </header>
@@ -242,6 +242,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
       <h2>Decrypted Strings</h2>
       <div class="row">
         <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="onlyJuicy"> juicy only</label>
+        <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="onlyUrls"> URLs / loadstrings</label>
         <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="hideJunk" checked> hide junk</label>
       </div>
     </div>
@@ -273,7 +274,10 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
   let results = [];
   let fileName = "";
 
-  const JUICY_RE = /https?:\/\/|discord(?:app)?\.com|webhook|loadstring|getfenv|setfenv|HttpService|RequestAsync|api[_-]?key|secret|token|password|rbxassetid|game:GetService|Players\.LocalPlayer|FireServer|InvokeServer|RemoteEvent|RemoteFunction|MarketplaceService|PromptGamePass|key\s*[=:]|auth|bearer|authorization|pastebin|raw\.githubusercontent|bit\.ly|discord\.gg/i;
+  const JUICY_RE = /https?:\/\/|discord(?:app)?\.com|webhook|loadstring|getfenv|setfenv|HttpService|RequestAsync|api[_-]?key|secret|token|password|rbxassetid|game:GetService|Players\.LocalPlayer|FireServer|InvokeServer|RemoteEvent|RemoteFunction|MarketplaceService|PromptGamePass|key\s*[=:]|auth|bearer|authorization|pastebin|raw\.githubusercontent|bit\.ly|discord\.gg|HttpGet|GetAsync|require\s*\(|setfpscap|Drawing\.|syn\.|http\.request|crypt\.|base64|Identif(?:y|ier)|executor|isexecutor|getgenv|getrenv|hookfunction|hookmetamethod|newcclosure|checkcaller|islclosure|getscriptbytecode|getrawmetatable|setreadonly|make_writeable|protect_gui|cloneref|compareinstances|firesignal|getconnections|getnamecallmethod|setclipboard|request\s*\(|\bURL\b|\bUri\b/i;
+
+  const URL_RE = /https?:\/\/[^\s"'`<>\\]{6,}|discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-Za-z0-9_-]+|raw\.githubusercontent\.com\/[^\s"'`<>\\]+|pastebin\.com\/raw\/[A-Za-z0-9]+|gist\.githubusercontent\.com\/[^\s"'`<>\\]+/gi;
+  const LOADSTRING_RE = /loadstring\s*\(\s*(?:game:HttpGet(?:Async)?\s*\(\s*)?["'`]([^"'`]+)["'`]/gi;
 
   function log(msg, cls) {
     const line = document.createElement("div");
@@ -320,25 +324,44 @@ Mocks game/HttpGet/loadstring. Large Luraph VMs can still OOM on mobile — use 
       if (!s || typeof s !== "string") return;
       if (s.length < 3) return;
       if (seen.has(s)) return;
-      // drop pure binary noise unless juicy
-      const juicy = JUICY_RE.test(s);
+      const hasUrl = URL_RE.test(s) || /loadstring/i.test(s);
+      const juicy = hasUrl || JUICY_RE.test(s);
       let printable = 0;
       for (let i = 0; i < s.length; i++) {
         const c = s.charCodeAt(i);
         if ((c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13) printable++;
       }
-      if (!juicy && printable / s.length < 0.6) return;
+      if (!juicy && printable / s.length < 0.55) return;
       seen.add(s);
       hitCount++;
       results.push({
         index: results.length + 1,
         str: s,
-        score: juicy ? 999 : 60,
+        score: hasUrl ? 2000 : (juicy ? 999 : 60),
         method: "VM:" + tag,
         juicy: juicy,
         junk: false
       });
       if (juicy) log("VM juicy [" + tag + "]: " + s.slice(0, 180), "ok");
+      // split nested URLs out immediately
+      if (s.length > 20) {
+        URL_RE.lastIndex = 0;
+        let um;
+        while ((um = URL_RE.exec(s)) !== null) {
+          const u = um[0];
+          if (seen.has(u)) continue;
+          seen.add(u);
+          results.push({
+            index: results.length + 1,
+            str: u,
+            score: 2000,
+            method: "VM:url-from-" + tag,
+            juicy: true,
+            junk: false
+          });
+          log("VM URL: " + u.slice(0, 200), "ok");
+        }
+      }
     }
 
     // print → capture
@@ -525,20 +548,125 @@ print("__VM_FINISHED__")
     acc += curSign * cur; return acc | 0;
   }
 
-  function extractCTable(src) {
+
+  // ---------- direct literal harvest (URLs / loadstring args / raw strings) ----------
+  function harvestDirectLiterals(src) {
+    const hits = [];
+    const seen = new Set();
+    function push(s, method) {
+      if (!s || s.length < 4) return;
+      if (seen.has(s)) return;
+      seen.add(s);
+      const juicy = JUICY_RE.test(s) || URL_RE.test(s);
+      hits.push({
+        index: 0,
+        str: s,
+        score: juicy ? 999 : scoreString(s),
+        method: method,
+        juicy: juicy,
+        junk: false
+      });
+    }
+    // all double/single quoted string literals that look useful
+    const litRe = /(["'])(?:\\.|[^\\])*?\1/g;
+    let m;
+    while ((m = litRe.exec(src)) !== null) {
+      let raw = m[0];
+      try {
+        // cheap unescape of common escapes
+        let inner = raw.slice(1, -1);
+        inner = inner
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .replace(/\\'/g, "'")
+          .replace(/\\\\/g, "\\");
+        if (/https?:\/\//i.test(inner) || /loadstring/i.test(inner) || /webhook/i.test(inner) || /raw\.githubusercontent/i.test(inner) || /pastebin/i.test(inner)) {
+          push(inner, "literal");
+        }
+      } catch (_) {}
+    }
+    // explicit URL regex over whole source
+    URL_RE.lastIndex = 0;
+    while ((m = URL_RE.exec(src)) !== null) {
+      push(m[0], "url-scan");
+    }
+    // loadstring("...") or loadstring(game:HttpGet("..."))
+    const lsPatterns = [
+      /loadstring\s*\(\s*["'`]([\s\S]*?)["'`]\s*\)/gi,
+      /loadstring\s*\(\s*game\s*:\s*HttpGet(?:Async)?\s*\(\s*["'`]([^"'`]+)["'`]/gi,
+      /HttpGet(?:Async)?\s*\(\s*["'`]([^"'`]+)["'`]/gi,
+      /RequestAsync\s*\(\s*\{\s*Url\s*=\s*["'`]([^"'`]+)["'`]/gi,
+      /\.Url\s*=\s*["'`]([^"'`]+)["'`]/gi
+    ];
+    for (const re of lsPatterns) {
+      re.lastIndex = 0;
+      while ((m = re.exec(src)) !== null) {
+        if (m[1]) push(m[1], "loadstring/http");
+      }
+    }
+    // long [[ ]] long strings
+    const longRe = /\[(=*)\[([\s\S]*?)\]\1\]/g;
+    while ((m = longRe.exec(src)) !== null) {
+      const body = m[2] || "";
+      if (body.length >= 8 && (URL_RE.test(body) || JUICY_RE.test(body))) {
+        push(body.slice(0, 4000), "longstr");
+      }
+    }
+    return hits;
+  }
+
+  // extract ALL C-like tables of decimal-escape strings (not just first)
+  function extractAllCTables(src) {
+    const tables = [];
+    const n = src.length;
+    // find candidate starts: local C= / C={ / local _C / local S=
+    const starts = [];
+    const reStart = /\b(?:local\s+)?([A-Za-z_][\w]*)\s*=\s*\{/g;
+    let mm;
+    while ((mm = reStart.exec(src)) !== null) {
+      starts.push({ name: mm[1], idx: mm.index, brace: src.indexOf("{", mm.index) });
+    }
+    // also force classic C=
+    let hi = src.indexOf("local C=");
+    if (hi >= 0) starts.unshift({ name: "C", idx: hi, brace: src.indexOf("{", hi) });
+    hi = src.indexOf("C={");
+    if (hi >= 0) starts.unshift({ name: "C", idx: hi, brace: hi + 1 });
+
+    const seenBrace = new Set();
+    for (const st of starts) {
+      if (st.brace < 0 || seenBrace.has(st.brace)) continue;
+      // only consider tables that contain \ddd escapes nearby
+      const peek = src.slice(st.brace, st.brace + Math.min(8000, n - st.brace));
+      if (!/\\[0-9]{1,3}/.test(peek) && !/\\x[0-9a-fA-F]{2}/.test(peek)) continue;
+      seenBrace.add(st.brace);
+      const strings = extractCTableFrom(src, st.brace);
+      if (strings.length >= 4) {
+        tables.push({ name: st.name, strings });
+      }
+    }
+    // fallback: whole-file scan
+    if (!tables.length) {
+      const all = extractCTableFrom(src, 0);
+      if (all.length) tables.push({ name: "scan", strings: all });
+    }
+    return tables;
+  }
+
+  function extractCTableFrom(src, startAt) {
     const strings = [];
     const n = src.length;
-    let i = 0;
-    let startHint = src.indexOf("local C=");
-    if (startHint < 0) startHint = src.indexOf("C={");
-    if (startHint < 0) startHint = 0;
-    i = Math.max(0, startHint - 64);
-    while (i < n) {
+    let i = Math.max(0, startAt | 0);
+    const limit = n; // full from start
+    while (i < limit) {
       if (src[i] === '"' || src[i] === "'") {
         const q = src[i];
         const start = i;
         i++;
-        if (src[i] === "\\" && src[i + 1] >= "0" && src[i + 1] <= "9") {
+        // only treat as byte-string if first content is escape digit or \x
+        const looksBinary = (src[i] === "\\" && ((src[i + 1] >= "0" && src[i + 1] <= "9") || src[i + 1] === "x" || src[i + 1] === "X"));
+        if (looksBinary) {
           const bytes = [];
           while (i < n && src[i] !== q) {
             if (src[i] === "\\" && i + 1 < n) {
@@ -550,21 +678,34 @@ print("__VM_FINISHED__")
               }
               const map = { n: 10, r: 13, t: 9, a: 7, b: 8, f: 12, v: 11, '"': 34, "'": 39, "\\": 92 };
               if (map[c1] != null) { bytes.push(map[c1]); i += 2; continue; }
-              if (c1 === "x" && i + 3 < n) { const hx = src.substr(i + 2, 2); if (/^[0-9a-fA-F]{2}$/.test(hx)) { bytes.push(parseInt(hx, 16)); i += 4; continue; } }
+              if ((c1 === "x" || c1 === "X") && i + 3 < n) {
+                const hx = src.substr(i + 2, 2);
+                if (/^[0-9a-fA-F]{2}$/.test(hx)) { bytes.push(parseInt(hx, 16)); i += 4; continue; }
+              }
               bytes.push(src.charCodeAt(i + 1) & 0xff); i += 2; continue;
             }
             bytes.push(src.charCodeAt(i) & 0xff); i++;
           }
-          if (i < n && src[i] === q && bytes.length >= 4) { strings.push(bytes); i++; continue; }
+          if (i < n && src[i] === q && bytes.length >= 2) { strings.push(bytes); i++; continue; }
           i = start + 1; continue;
         }
         while (i < n && src[i] !== q) { if (src[i] === "\\" && i + 1 < n) i += 2; else i++; }
         if (i < n) i++;
         continue;
       }
+      // stop early if we left a huge gap of non-string after collecting some
+      if (strings.length > 0 && i - startAt > 3000000) break;
       i++;
     }
     return strings;
+  }
+
+  function extractCTable(src) {
+    // prefer largest C-like table
+    const tables = extractAllCTables(src);
+    if (!tables.length) return extractCTableFrom(src, 0);
+    tables.sort((a, b) => b.strings.length - a.strings.length);
+    return tables[0].strings;
   }
 
   function extractShuffle(src) {
@@ -779,35 +920,84 @@ print("__VM_FINISHED__")
       if (!bytes || !bytes.length) return;
       const s = bytesToLatin1(bytes);
       candidates.push({ bytes, str: s, score: scoreString(s), method });
+      // also score URL hits extremely high
+      if (URL_RE.test(s) || /loadstring/i.test(s)) {
+        candidates.push({ bytes, str: s, score: 2000, method: method + "+url" });
+      }
+    }
+    function subBytes(bytes, add) {
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] + add) & 0xff;
+      return out;
+    }
+    function bitNot(bytes) {
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = (~bytes[i]) & 0xff;
+      return out;
+    }
+    function nibbleSwap(bytes) {
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i] & 0xff;
+        out[i] = ((b << 4) | (b >>> 4)) & 0xff;
+      }
+      return out;
     }
     consider(rawBytes, "raw");
+    consider(subBytes(rawBytes, 1), "add1");
+    consider(subBytes(rawBytes, -1), "sub1");
+    consider(bitNot(rawBytes), "not");
+    consider(nibbleSwap(rawBytes), "nibble");
     const b64 = b64Decode(rawBytes);
     if (b64) {
       consider(b64, "b64");
       consider(applyPMap(b64, pMap, false), "b64+P");
       consider(applyPMap(b64, pMap, true), "b64+Pinv");
+      consider(bitNot(b64), "b64+not");
     }
     const pFwd = applyPMap(rawBytes, pMap, false);
     const pInv = applyPMap(rawBytes, pMap, true);
     consider(pFwd, "P"); consider(pInv, "Pinv");
+    // chained: P then b64
+    const pInvB64 = b64Decode(pInv);
+    if (pInvB64) consider(pInvB64, "Pinv+b64");
+    const pFwdB64 = b64Decode(pFwd);
+    if (pFwdB64) consider(pFwdB64, "P+b64");
     for (const kb of deriveKeyCandidates(pMap, index, rawBytes.length)) {
       consider(rollingXor(rawBytes, kb), "rxor");
       if (b64) consider(rollingXor(b64, kb), "b64+rxor");
       consider(rollingXor(pFwd, kb), "P+rxor");
       consider(rollingXor(pInv, kb), "Pinv+rxor");
+      // double xor layers common in newer Luraph
+      const once = rollingXor(rawBytes, kb);
+      consider(rollingXor(once, kb), "rxor2");
+      consider(applyPMap(rollingXor(pInv, kb), pMap, true), "Pinv+rxor+Pinv");
     }
-    for (const seed of [rawBytes.length, index + 1, (index + 1) * 2654435761, 0xdeadbeef, 0x12345678, Object.keys(pMap).length]) {
+    const seeds = [
+      rawBytes.length, index + 1, (index + 1) * 2654435761,
+      0xdeadbeef, 0x12345678, Object.keys(pMap).length,
+      0x6c757261, 0x706861, index * 97 + rawBytes.length,
+      0x9e3779b9, 0x85ebca6b
+    ];
+    for (const seed of seeds) {
       consider(rollingXorState(rawBytes, seed), "lcg");
       if (b64) consider(rollingXorState(b64, seed), "b64+lcg");
       consider(rollingXorState(pInv, seed), "Pinv+lcg");
+      consider(rollingXorState(pFwd, seed), "P+lcg");
     }
-    for (const seed of [0, 1, index, rawBytes.length & 0xff]) {
+    for (const seed of [0, 1, index, rawBytes.length & 0xff, 0x5a, 0xa5]) {
       consider(rollingXorAcc(rawBytes, seed), "acc");
       if (b64) consider(rollingXorAcc(b64, seed), "b64+acc");
+      consider(rollingXorAcc(pInv, seed), "Pinv+acc");
     }
-    if (rawBytes.length <= 48) {
+    // always try single-byte xor up to 96 bytes (was 48)
+    if (rawBytes.length <= 96) {
       const brute = singleByteXorBrute(b64 || rawBytes);
       if (brute) candidates.push(brute);
+      if (b64 && rawBytes.length <= 64) {
+        const brute2 = singleByteXorBrute(rawBytes);
+        if (brute2) candidates.push(brute2);
+      }
     }
     candidates.sort((a, b) => b.score - a.score);
     return candidates[0] || { str: bytesToLatin1(rawBytes), score: -1e9, method: "raw", bytes: rawBytes };
@@ -816,12 +1006,41 @@ print("__VM_FINISHED__")
   function run(src) {
     results = [];
     logEl.innerHTML = "";
-    setBar(5);
-    log("scanning C table…", "info");
-    const C = extractCTable(src);
+    setBar(3);
+    // Pass 0 — direct literals / URLs / loadstrings (never miss plain text)
+    log("harvesting plain URLs + loadstrings…", "info");
+    const direct = harvestDirectLiterals(src);
+    log("direct hits: " + direct.length, direct.length ? "ok" : "info");
+    setBar(8);
+    log("scanning C table(s)…", "info");
+    const tables = extractAllCTables(src);
+    let C = [];
+    if (tables.length) {
+      tables.sort((a, b) => b.strings.length - a.strings.length);
+      C = tables[0].strings;
+      log("C-like tables: " + tables.length + " (using '" + tables[0].name + "' = " + C.length + ")", "ok");
+      if (tables.length > 1) {
+        for (let t = 1; t < Math.min(tables.length, 4); t++) {
+          log("  alt table '" + tables[t].name + "': " + tables[t].strings.length, "info");
+        }
+      }
+    } else {
+      C = extractCTable(src);
+    }
     setStats({ C: C.length });
     log("C entries: " + C.length, C.length ? "ok" : "err");
-    if (!C.length) { log("no decimal-escape strings found.", "err"); setBar(0); return; }
+    if (!C.length && !direct.length) { log("no strings found.", "err"); setBar(0); return; }
+    if (!C.length) {
+      results = direct.map((d, i) => ({ ...d, index: i + 1 }));
+      const juicy = results.filter(r => r.juicy).length;
+      setStats({ Dec: results.length, J: juicy });
+      setBar(100);
+      log("done — direct-only " + results.length + " strings, " + juicy + " juicy", "ok");
+      render();
+      $("#btnExport").disabled = false;
+      $("#btnExportJson").disabled = false;
+      return;
+    }
     setBar(20);
     log("parsing shuffle…", "info");
     const pairs = extractShuffle(src);
@@ -848,10 +1067,53 @@ print("__VM_FINISHED__")
       decoded.push({ index: i + 1, str: best.str, score: best.score, method: best.method, juicy: isJuicy, junk: best.score < 20 });
       if (i % chunk === 0) setBar(45 + (50 * i) / total);
     }
+    // merge direct harvest (URLs / loadstrings) at top, dedupe
+    const seenStr = new Set(decoded.map(d => d.str));
+    for (const d of direct) {
+      if (seenStr.has(d.str)) continue;
+      seenStr.add(d.str);
+      if (d.juicy) juicy++;
+      decoded.unshift({
+        index: 0,
+        str: d.str,
+        score: d.score,
+        method: d.method,
+        juicy: d.juicy,
+        junk: false
+      });
+    }
+    // reindex
+    for (let i = 0; i < decoded.length; i++) decoded[i].index = i + 1;
+    // also mine URLs out of every decrypted blob
+    const extra = [];
+    for (const d of decoded) {
+      URL_RE.lastIndex = 0;
+      let um;
+      while ((um = URL_RE.exec(d.str)) !== null) {
+        const u = um[0];
+        if (seenStr.has(u)) continue;
+        seenStr.add(u);
+        extra.push({ index: 0, str: u, score: 2000, method: "url-from:" + d.method, juicy: true, junk: false });
+        juicy++;
+      }
+      // loadstring("code") inside decrypted
+      const ls = /loadstring\s*\(\s*["'`]([\s\S]{4,}?)["'`]/gi;
+      let lm;
+      while ((lm = ls.exec(d.str)) !== null) {
+        const body = lm[1];
+        if (seenStr.has(body)) continue;
+        seenStr.add(body);
+        extra.push({ index: 0, str: body, score: 1500, method: "loadstring-from:" + d.method, juicy: true, junk: false });
+        juicy++;
+      }
+    }
+    for (const e of extra) decoded.unshift(e);
+    for (let i = 0; i < decoded.length; i++) decoded[i].index = i + 1;
     results = decoded;
     setStats({ Dec: decoded.length, J: juicy });
     setBar(100);
     log("done — " + decoded.length + " strings, " + juicy + " juicy hits", "ok");
+    if (extra.length) log("extracted " + extra.length + " nested URL/loadstring payloads", "ok");
     render();
     $("#btnExport").disabled = false;
     $("#btnExportJson").disabled = false;
@@ -860,11 +1122,13 @@ print("__VM_FINISHED__")
   function render() {
     const q = ($("#search").value || "").toLowerCase();
     const onlyJ = $("#onlyJuicy").checked;
+    const onlyU = $("#onlyUrls") && $("#onlyUrls").checked;
     const hideJunk = $("#hideJunk").checked;
     const frag = document.createDocumentFragment();
     let shown = 0;
     for (const r of results) {
       if (onlyJ && !r.juicy) continue;
+      if (onlyU && !(URL_RE.test(r.str) || /loadstring/i.test(r.str) || /http/i.test(r.method))) continue;
       if (hideJunk && r.junk && !r.juicy) continue;
       if (q && r.str.toLowerCase().indexOf(q) < 0) continue;
       const row = document.createElement("div");
@@ -951,6 +1215,7 @@ print("__VM_FINISHED__")
   });
   $("#search").addEventListener("input", render);
   $("#onlyJuicy").addEventListener("change", render);
+  if ($("#onlyUrls")) $("#onlyUrls").addEventListener("change", render);
   $("#hideJunk").addEventListener("change", render);
 
   // boot check
