@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // FENGARI MONSTER</title>
+<title>VEX // STATIC CRACKER</title>
 <style>
   :root { --bg:#050508; --panel:#0d0d12; --border:#1f1f2a; --txt:#d1d1d6; --acc:#00ffcc; --warn:#ffaa00; --err:#ff3366; }
   body { background:var(--bg); color:var(--txt); font:14px ui-monospace,monospace; padding:16px; margin:0; }
@@ -16,13 +16,10 @@
   .hit { color:var(--warn); font-weight:bold; display:block; margin:6px 0; padding:10px; background:rgba(255,170,0,0.06); border-left:3px solid var(--warn); border-radius:4px; }
   input[type=file]{ display:none; }
 </style>
-
-<!-- INLINE FENGARI VM (No CDN, runs locally) -->
-<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 </head>
 <body>
 
-<h1>VEX // FENGARI MONSTER</h1>
+<h1>VEX // STATIC CRACKER</h1>
 <div id="drop"><b>TAP HERE</b> to load target</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
 <div id="status">waiting...</div>
@@ -39,91 +36,135 @@ drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('hot')
 fi.onchange=e=>{if(e.target.files.length)load(e.target.files[0]);};
 
 function log(msg,isErr){
-  out.style.display='block';
-  out.innerHTML += `<div style="color:${isErr?'var(--err)':'var(--acc)'}; margin-bottom:4px;">[VM] ${msg}</div>`;
   st.textContent=msg;
-  if(isErr) st.style.color='var(--err)'; else st.style.color='var(--acc)';
+  st.className = isErr ? 'err' : '';
 }
 
 function load(file){
-  st.textContent=`reading ${file.name}...`; out.innerHTML='';
+  log(`reading ${file.name}...`); out.style.display='none'; out.innerHTML='';
   const r=new FileReader();
-  r.onload=e=>setTimeout(()=>execute(e.target.result),100);
+  r.onload=e=>setTimeout(()=>process(e.target.result),50);
   r.readAsText(file);
 }
 
-function execute(src) {
-  if (typeof FengariWeb === 'undefined') {
-    log('Fengari VM failed to load from CDN. Check internet.', true);
-    return;
+function decEsc(lit){
+  const o=[];let i=0;
+  while(i<lit.length){
+    if(lit[i]==='\\'){
+      const m=/^\d{1,3}/.exec(lit.slice(i+1));
+      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
+      const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
+      if(esc!==undefined){o.push(esc);i+=2;continue;}
+      i+=2;continue;
+    }
+    o.push(lit.charCodeAt(0)&255);i++;
   }
-  
-  log('VM loaded. Injecting script...');
-  
-  // The wrapper mocks the Roblox environment and hooks string.char
-  const wrapper = `
-    local real_print = print
+  return Uint8Array.from(o);
+}
+
+function toStr(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return s; }
+
+function process(src){
+  try{
+    log(`loaded: ${src.length} bytes. extracting...`);
     
-    -- Hook string.char to catch the VM's decryption output
-    local old_char = string.char
-    string.char = function(...)
-        local s = old_char(...)
-        if #s >= 4 then
-            local low = string.lower(s)
-            if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "webhook") or string.find(low, "api") or string.find(low, "init") then
-                real_print("JUICY_HIT: " .. s)
-            end
-        end
-        return s
-    end
-    
-    -- Mock Roblox functions so the script doesn't crash trying to call them
-    game = {
-        HttpGet = function(url) real_print("JUICY_HIT_HTTPGET: " .. url) return "" end,
-        GetService = function() return {HttpGet = function() return "" end} end,
-        Players = { LocalPlayer = { Name = "Vex", UserId = 1 } }
+    // 1. Extract C Table
+    const i = src.indexOf('local C');
+    if(i<0) throw new Error('No local C table');
+    let b = src.indexOf('{', i);
+    let depth=0, end=-1;
+    for(let j=b;j<src.length;j++){
+      const c=src[j];
+      if(c==='{')depth++;
+      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
+      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
     }
-    getgenv = function() return {} end
-    wait = function() end
-    task = { wait = function() end, spawn = function(f) f() end }
-    loadstring = function(s) real_print("JUICY_HIT_LOADSTRING") return function() end end
-    warn = real_print
-    pcall = pcall
+    const table = src.slice(b+1,end);
+    const lits=[]; let k=0;
+    while(k<table.length){
+      if(table[k]==='"'){
+        let j=k+1, buf='';
+        while(j<table.length){
+          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
+          if(table[j]==='"')break;
+          buf+=table[j];j++;
+        }
+        lits.push(buf); k=j+1;
+      } else k++;
+    }
+    let C = lits.map(decEsc);
+    log(`extracted ${C.length} strings.`);
 
-    -- Execute the target
-    local ok, err = pcall(function()
-        ${src}
-    end)
-    
-    if not ok then real_print("VM_ERROR: " .. tostring(err)) end
-    real_print("VM_FINISHED")
-  `;
-
-  // Redirect Lua's print to our UI
-  FengariWeb.set_print_fn(function(text) {
-    if (text.indexOf('JUICY_HIT:') === 0) {
-      let cleaned = text.replace('JUICY_HIT: ', '');
-      out.innerHTML += `<span class="hit">DECRYPTED: ${cleaned}</span>`;
-    } else if (text.indexOf('JUICY_HIT_HTTPGET:') === 0) {
-      let cleaned = text.replace('JUICY_HIT_HTTPGET: ', '');
-      out.innerHTML += `<span class="hit">URL FETCH: ${cleaned}</span>`;
-    } else if (text === 'VM_FINISHED') {
-      log('Script finished executing.');
-    } else if (text.indexOf('VM_ERROR:') === 0) {
-      log('Lua Crash: ' + text, true);
+    // 2. Parse Shuffle Triples
+    // Pattern: {val, val, val}, {val, val, val}, ...
+    const triMatch = /for\s+h,v\s+in\s+ipairs\(\{(.*?)\}\)\s*do/s.exec(src);
+    if(triMatch) {
+        log('Parsing shuffle triples...');
+        const rawTris = triMatch[1];
+        const tris = [];
+        const blockRe = /\{([^{}]+)\}/g;
+        let m;
+        while((m = blockRe.exec(rawTris)) !== null) {
+            const parts = m[1].split(/[;,]/);
+            if(parts.length >= 3) {
+                // Evaluate math (safe because it's just numbers)
+                const vals = parts.map(p => {
+                    try { return eval(p); } catch(e) { return 0; }
+                });
+                if(vals.length >= 3) tris.push([vals[0], vals[1], vals[2]]);
+            }
+        }
+        log(`Applying ${tris.length} shuffle operations...`);
+        
+        // Lua: C[v0],C[v1],v0,v1 = C[v1],C[v2],v0+1,v1-1
+        for(let t=0; t<tris.length; t++) {
+            let v0 = tris[t][0] - 1;
+            let v1 = tris[t][1] - 1;
+            const v2 = tris[t][2] - 1;
+            while(v0 < v1) {
+                if(v0 >= 0 && v0 < C.length && v1 >= 0 && v1 < C.length) {
+                    let tmp = C[v1]; C[v1] = C[v0]; C[v0] = tmp;
+                    v0++; v1--;
+                } else break;
+            }
+        }
     } else {
-      // Output normal prints if they look like text
-      if (text.indexOf('http') > -1 || text.length < 100) {
-         out.innerHTML += `<div style="color:#555; font-size:11px;">${text}</div>`;
-      }
+        log('No shuffle triples found. Skipping shuffle.');
     }
-  });
 
-  try {
-    // Run the VM
-    FengariWeb.run(wrapper);
+    // 3. Decode
+    log('Decoding...');
+    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
+    let hits=0, outHtml='';
+
+    C.forEach((u8, idx) => {
+      let rawStr = toStr(u8);
+      let b64Str = null;
+      
+      try {
+        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
+        while(s.length % 4) s += '=';
+        b64Str = atob(s);
+      } catch(e) {}
+
+      // Check b64
+      if (b64Str && juicy.test(b64Str)) {
+        outHtml += `<span class="hit">[${idx}] ${b64Str}</span>`;
+        hits++;
+      } 
+      // Check raw
+      else if (juicy.test(rawStr)) {
+        outHtml += `<span class="hit">[${idx}] RAW: ${rawStr}</span>`;
+        hits++;
+      }
+    });
+
+    out.innerHTML = outHtml || '<div style="color:#888">no hits.</div>';
+    out.style.display = 'block';
+    log(`done. ${hits} hits.`);
+
   } catch(e) {
-    log('JS CRASH: ' + e.message, true);
+    log('CRASH: '+e.message, true);
   }
 }
 </script>
