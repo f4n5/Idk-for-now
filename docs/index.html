@@ -3,24 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // ECON CRACKER v8</title>
+<title>VEX // ECON VM CRACKER</title>
 <style>
   body{background:#0a0a0c;color:#e0e0e0;font:14px ui-monospace,monospace;padding:12px;margin:0}
   h1{font-size:16px;color:#00ffcc;margin:0 0 10px}
   #drop{border:2px dashed #333;border-radius:8px;padding:30px 10px;text-align:center;color:#888;margin-bottom:12px;cursor:pointer}
   #status{color:#00ffcc;margin-bottom:8px;font-weight:bold;min-height:16px;word-break:break-all}
   #status.error{color:#ff3366}
-  #out{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:70vh;overflow-y:auto;font-size:12px;display:none}
+  #out{background:#000;border:1px solid #222;border-radius:6px;padding:10px;white-space:pre-wrap;word-break:break-all;max-height:60vh;overflow-y:auto;font-size:12px;display:none}
   .hit{color:#ffaa00;font-weight:bold;display:block;margin:4px 0;padding:4px;background:rgba(255,170,0,.1);border-radius:3px}
   input[type=file]{display:none}
 </style>
 </head>
 <body>
-<h1>VEX // ECON CRACKER v8</h1>
+<h1>VEX // ECON VM CRACKER</h1>
 <div id="drop"><b>TAP HERE</b> to load Econ.txt</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
-<div id="status">waiting...</div>
+<div id="status">initializing Lua VM (requires internet)...</div>
 <div id="out"></div>
+
+<!-- Load Fengari (Lua VM in JS) -->
+<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 
 <script>
 const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
@@ -41,102 +44,74 @@ function log(msg,isErr){
 function load(file){
   st.textContent=`reading ${file.name}...`; out.innerHTML='';
   const r=new FileReader();
-  r.onload=e=>setTimeout(()=>process(e.target.result),50);
+  r.onload=e=>setTimeout(()=>execute(e.target.result),100);
   r.onerror=()=>log('FileReader died.',true);
   r.readAsText(file);
 }
 
-function process(src){
-  try{
-    const i = src.indexOf('local C');
-    if(i<0) throw new Error('No "local C" table found.');
-    let b = src.indexOf('{', i);
-    let depth=0, end=-1;
-    for(let j=b;j<src.length;j++){
-      const c=src[j];
-      if(c==='{')depth++;
-      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
-      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
+function execute(src){
+  log('File loaded. Starting Lua VM...');
+  
+  // 1. Prepare the Lua wrapper with the hook
+  const hook = `
+    local real_print = print
+    local target_strings = {}
+    
+    -- Hook string.char to catch decrypted strings
+    local old_char = string.char
+    string.char = function(...)
+        local s = old_char(...)
+        if #s >= 4 then
+            local low = string.lower(s)
+            if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "loadstring") or string.find(low, "webhook") or string.find(low, "init") or string.find(low, "api") then
+                real_print("JUICY_HIT: " .. s)
+            end
+        end
+        return s
+    end
+    
+    -- Hook game:HttpGet in case it tries to download a second stage
+    game = {
+        HttpGet = function(url)
+            real_print("JUICY_HIT: HTTPGET: " .. url)
+            return ""
+        end,
+        GetService = function() return {HttpGet = function() return "" end} end
     }
-    if(end<0) throw new Error('unbalanced braces');
+    getgenv = function() return {} end
+    wait = function() end
+    task = { wait = function() end, spawn = function(f) f() end }
+    loadstring = function(s) return function() end end
 
-    const table = src.slice(b+1,end);
-    const lits=[]; let k=0;
-    while(k<table.length){
-      if(table[k]==='"'){
-        let j=k+1, buf='';
-        while(j<table.length){
-          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
-          if(table[j]==='"')break;
-          buf+=table[j];j++;
-        }
-        lits.push(buf); k=j+1;
-      } else k++;
-    }
+    -- Sandbox the actual source
+    local ok, err = pcall(function()
+        ${src}
+    end)
+    
+    if not ok then real_print("VM_ERR: " .. tostring(err)) end
+    real_print("VM_FINISHED")
+  `;
 
-    let C = lits.map(decEsc);
-    log(`Extracted ${C.length} strings. trying base64 variants...`);
-
-    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
-    let hits = 0;
-
-    C.forEach((u8,idx)=>{
-      let s = String.fromCharCode(...u8).trim();
-      let d = null;
-
-      // Try normal b64
-      if (/^[A-Za-z0-9+/=]+$/.test(s)) {
-        try { d = atob(s); } catch(e){}
-      }
-      // Try unpadded b64
-      if (!d) {
-        try { d = atob(s + "==".substring(0, (4 - s.length % 4) % 4)); } catch(e){}
-      }
-      // Try reversed b64
-      if (!d) {
-        try { d = atob(s.split('').reverse().join('')); } catch(e){}
-      }
-      
-      // Check if decoded is readable
-      let pb = d ? toStr(Uint8Array.from(d, c=>c.charCodeAt(0))) : null;
-      
-      if(pb && juicy.test(pb)) { 
-        out.innerHTML += `<span class="hit">[${idx}] DECRYPTED: ${pb}</span>`; 
-        hits++; 
+  // 2. Run it through fengari
+  try {
+    // Capture Lua's print output
+    FengariWeb.set_print_fn(function(text) {
+      if (text.indexOf('JUICY_HIT:') === 0) {
+        let cleaned = text.replace('JUICY_HIT: ', '');
+        out.innerHTML += `<span class="hit">${cleaned}</span>`;
+      } else if (text === 'VM_FINISHED') {
+        log('DONE. VM finished. If hits were found, they are above.');
+      } else if (text.indexOf('VM_ERR:') === 0) {
+        log('Lua Error: ' + text, true);
       }
     });
 
-    if(hits === 0) log('No juicy hits found. Luraph uses rolling XOR keyed by index.', true);
-    else log(`DONE. Found ${hits} hits above.`);
-
+    // Execute the wrapped code
+    FengariWeb.run(hook);
+    
   } catch(e) {
-    log('CRASH: '+e.message, true);
+    log('JS CRASH: ' + e.message, true);
   }
-}
-
-function decEsc(lit){
-  const o=[];let i=0;
-  while(i<lit.length){
-    if(lit[i]==='\\'){
-      const m=/^\d{1,3}/.exec(lit.slice(i+1));
-      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
-      const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
-      if(esc!==undefined){o.push(esc);i+=2;continue;}
-      i+=2;continue;
-    }
-    o.push(lit.charCodeAt(0)&255);i++;
-  }
-  return Uint8Array.from(o);
-}
-
-function toStr(u8) {
-  let s = '';
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  let good = 0;
-  for (let i = 0; i < u8.length; i++) {
-    if ((u8[i] >= 32 && u8[i] < 127) || u8[i] === 9 || u8[i] === 10 || u8[i] === 13) good++;
-  }
-  return (good >= u8.length * 0.75) ? s : null;
 }
 </script>
 </body>
