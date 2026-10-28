@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph V14+ String Deobfuscator — Shiv</title>
+<title>Luraph V14+ String Deobfuscator — Shiv + VM</title>
 <style>
 :root {
   --bg: #0d0f14;
@@ -98,7 +98,12 @@ button.primary {
   border-color: var(--accent);
   color: #fff;
 }
-button.primary:hover { filter: brightness(1.08); }
+button.vm {
+  background: #df9b3f;
+  border-color: #df9b3f;
+  color: #fff;
+}
+button.primary:hover, button.vm:hover { filter: brightness(1.08); }
 button:disabled {
   opacity: 0.45;
   cursor: not-allowed;
@@ -246,6 +251,8 @@ details.tech pre {
   color: #8a93a8;
 }
 </style>
+<!-- LOAD FENGARI LUA VM -->
+<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 </head>
 <body>
 <header>
@@ -262,6 +269,7 @@ details.tech pre {
 
   <div class="row">
     <button class="primary" id="btnRun" disabled>Run Deobfuscation</button>
+    <button class="vm" id="btnVM" disabled>Execute Lua VM (Decrypt)</button>
     <button id="btnExport" disabled>Export TXT</button>
     <button id="btnExportJson" disabled>Export JSON</button>
     <button id="btnClear">Clear</button>
@@ -304,17 +312,13 @@ Pipeline:
 1. Linear scan for C table decimal-escape string literals (no catastrophic regex).
 2. Parse ipairs({{a;b};...}) shuffle pairs, evaluate arithmetic, apply 1-based swaps to C.
 3. Parse local P={k=expr,...} into a char→byte map (and reverse).
-4. For each shuffled string:
-   - decode decimal escapes → bytes
-   - try standard Base64 → bytes
-   - apply P-table substitution (forward / reverse)
-   - rolling XOR with key derived from string length, index, and P values
-   - LCG-style stream (Numerical Recipes constants used by several Luraph builds)
-   - score printable ratio + keyword hits; keep best candidate
+4. For each shuffled string: try Base64, P-table sub, rolling XOR, LCG, etc.
 5. Highlight http / key / discord / webhook / loadstring / rbx etc.
 
-If the sample uses a different outer envelope (base85+LZMA LPH), run an unpacker first
-and feed the resulting Lua that still contains the C/P/shuffle form.
+VM Execution:
+Click "Execute Lua VM" to run the script in a mocked Roblox environment. 
+This hooks string.char to catch decrypted strings in real-time. 
+(Note: A 10MB Luraph VM may crash mobile browsers due to memory limits).
     </pre>
   </details>
 </main>
@@ -341,10 +345,7 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     logEl.scrollTop = logEl.scrollHeight;
   }
 
-  function setBar(p) {
-    bar.style.width = Math.max(0, Math.min(100, p)) + "%";
-  }
-
+  function setBar(p) { bar.style.width = Math.max(0, Math.min(100, p)) + "%"; }
   function setStats(o) {
     if (o.C != null) $("#sC").textContent = o.C;
     if (o.Sh != null) $("#sSh").textContent = o.Sh;
@@ -353,218 +354,185 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     if (o.J != null) $("#sJ").textContent = o.J;
   }
 
-  // ---------- arithmetic evaluator for Luraph constant expressions ----------
-  // Handles: 333134+-333133 , 9762+-9702 , 785533-785516 , unary +/-
+  // === VM EXECUTION LOGIC ===
+  $("#btnVM").addEventListener("click", () => {
+    if (!sourceText) return;
+    if (typeof FengariWeb === 'undefined') {
+        log("Fengari VM failed to load from CDN. Check internet.", "err");
+        return;
+    }
+    
+    log("Starting Lua VM...", "info");
+    outEl.innerHTML = "";
+    results = [];
+    let vmLuaHits = 0;
+
+    // The Lua Wrapper with Mocks and Hooks
+    const wrapper = `
+      local real_print = print
+      
+      -- Hook string.char
+      local old_char = string.char
+      string.char = function(...)
+          local s = old_char(...)
+          if #s >= 4 then
+              local low = string.lower(s)
+              if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "webhook") or string.find(low, "api") then
+                  real_print("JUICY_HIT: " .. s)
+              end
+          end
+          return s
+      end
+      
+      -- Mock Roblox Env
+      game = {
+          HttpGet = function(url) real_print("JUICY_HIT_HTTPGET: " .. url) return "" end,
+          GetService = function() return {HttpGet = function() return "" end} end,
+          Players = { LocalPlayer = { Name = "Vex", UserId = 1 } }
+      }
+      getgenv = function() return {} end
+      wait = function() end
+      task = { wait = function() end, spawn = function(f) f() end }
+      loadstring = function(s) real_print("JUICY_HIT_LOADSTRING") return function() end end
+      warn = real_print
+
+      -- Execute target
+      local ok, err = pcall(function()
+          ${sourceText}
+      end)
+      
+      if not ok then real_print("VM_ERROR: " .. tostring(err)) end
+      real_print("VM_FINISHED")
+    `;
+
+    // Catch output from Lua VM
+    FengariWeb.set_print_fn(function(text) {
+      if (text.indexOf('JUICY_HIT:') === 0) {
+        let cleaned = text.replace('JUICY_HIT: ', '');
+        log("VM DECRYPTED: " + cleaned, "ok");
+        results.push({ index: results.length + 1, str: cleaned, juicy: true, score: 999, method: 'VM' });
+        vmLuaHits++;
+      } else if (text.indexOf('JUICY_HIT_HTTPGET:') === 0) {
+        let cleaned = text.replace('JUICY_HIT_HTTPGET: ', '');
+        log("VM URL FETCH: " + cleaned, "ok");
+        results.push({ index: results.length + 1, str: "URL: " + cleaned, juicy: true, score: 999, method: 'VM' });
+        vmLuaHits++;
+      } else if (text === 'VM_FINISHED') {
+        log("VM finished.", "ok");
+        setStats({ Dec: results.length, J: vmLuaHits });
+        render();
+        $("#btnExport").disabled = false;
+      } else if (text.indexOf('VM_ERROR:') === 0) {
+        log("Lua Error: " + text, "err");
+      }
+    });
+
+    try {
+      FengariWeb.run(wrapper);
+    } catch(e) {
+      log("JS Crash: " + e.message, "err");
+    }
+  });
+
+  // === STATIC LOGIC ===
   function evalExpr(s) {
     s = String(s).replace(/\s+/g, "");
-    // Normalize "a+-b" → "a+(-b)" style by converting +- to -
     s = s.replace(/\+\-/g, "-").replace(/\-\+/g, "-").replace(/\-\-/g, "+").replace(/\+\+/g, "+");
-    // Only digits and + -
-    if (!/^[+\-]?\d+([+\-]\d+)*$/.test(s)) {
-      // try simple Number
-      const n = Number(s);
-      if (!Number.isNaN(n)) return n | 0;
-      return 0;
-    }
-    let i = 0;
-    let sign = 1;
-    if (s[i] === "+") i++;
-    else if (s[i] === "-") { sign = -1; i++; }
-    let acc = 0;
-    let cur = 0;
-    let curSign = sign;
+    if (!/^[+\-]?\d+([+\-]\d+)*$/.test(s)) { const n = Number(s); if (!Number.isNaN(n)) return n | 0; return 0; }
+    let i = 0; let sign = 1; if (s[i] === "+") i++; else if (s[i] === "-") { sign = -1; i++; }
+    let acc = 0; let cur = 0; let curSign = sign;
     while (i < s.length) {
       const c = s[i];
-      if (c >= "0" && c <= "9") {
-        cur = cur * 10 + (c.charCodeAt(0) - 48);
-        i++;
-      } else if (c === "+" || c === "-") {
-        acc += curSign * cur;
-        cur = 0;
-        curSign = c === "+" ? 1 : -1;
-        i++;
-      } else {
-        i++;
-      }
+      if (c >= "0" && c <= "9") { cur = cur * 10 + (c.charCodeAt(0) - 48); i++; }
+      else if (c === "+" || c === "-") { acc += curSign * cur; cur = 0; curSign = c === "+" ? 1 : -1; i++; }
+      else { i++; }
     }
-    acc += curSign * cur;
-    return acc | 0;
+    acc += curSign * cur; return acc | 0;
   }
 
-  // ---------- linear scanner: extract C table decimal-escape strings ----------
-  // Looks for patterns like "\049\107\110..." without catastrophic backtracking.
   function extractCTable(src) {
     const strings = [];
     const n = src.length;
     let i = 0;
-
-    // Prefer locating "local C={" or "C={" near the start of the payload.
     let startHint = src.indexOf("local C=");
     if (startHint < 0) startHint = src.indexOf("C={");
     if (startHint < 0) startHint = 0;
-
-    // Scan from hint, but also allow full file if needed.
     const scanStart = Math.max(0, startHint - 64);
     i = scanStart;
 
     while (i < n) {
-      // Fast path: look for quote then backslash digit
       if (src[i] === '"' || src[i] === "'") {
         const q = src[i];
         const start = i;
         i++;
-        // Must start with \ddd style to count as Luraph encrypted literal
         if (src[i] === "\\" && src[i + 1] >= "0" && src[i + 1] <= "9") {
           const bytes = [];
-          let ok = true;
           while (i < n && src[i] !== q) {
             if (src[i] === "\\" && i + 1 < n) {
               const c1 = src[i + 1];
               if (c1 >= "0" && c1 <= "9") {
-                // decimal escape: \d, \dd, or \ddd (Lua style, max 3 digits)
                 let digits = c1;
                 let j = i + 2;
-                if (j < n && src[j] >= "0" && src[j] <= "9") {
-                  digits += src[j];
-                  j++;
-                  if (j < n && src[j] >= "0" && src[j] <= "9") {
-                    digits += src[j];
-                    j++;
-                  }
-                }
+                if (j < n && src[j] >= "0" && src[j] <= "9") { digits += src[j]; j++; if (j < n && src[j] >= "0" && src[j] <= "9") { digits += src[j]; j++; } }
                 const v = parseInt(digits, 10);
-                if (v > 255) {
-                  // Lua allows \ddd up to 255; if higher, still take low byte or reject
-                  bytes.push(v & 0xff);
-                } else {
-                  bytes.push(v);
-                }
+                bytes.push(v > 255 ? v & 0xff : v);
                 i = j;
                 continue;
               }
-              // other escapes
               const map = { n: 10, r: 13, t: 9, a: 7, b: 8, f: 12, v: 11, '"': 34, "'": 39, "\\": 92 };
-              if (map[c1] != null) {
-                bytes.push(map[c1]);
-                i += 2;
-                continue;
-              }
-              if (c1 === "x" && i + 3 < n) {
-                const hx = src.substr(i + 2, 2);
-                if (/^[0-9a-fA-F]{2}$/.test(hx)) {
-                  bytes.push(parseInt(hx, 16));
-                  i += 4;
-                  continue;
-                }
-              }
-              // unknown escape — take next char
-              bytes.push(src.charCodeAt(i + 1) & 0xff);
-              i += 2;
-              continue;
+              if (map[c1] != null) { bytes.push(map[c1]); i += 2; continue; }
+              if (c1 === "x" && i + 3 < n) { const hx = src.substr(i + 2, 2); if (/^[0-9a-fA-F]{2}$/.test(hx)) { bytes.push(parseInt(hx, 16)); i += 4; continue; } }
+              bytes.push(src.charCodeAt(i + 1) & 0xff); i += 2; continue;
             }
-            // plain char inside the string (rare for these literals)
-            bytes.push(src.charCodeAt(i) & 0xff);
-            i++;
+            bytes.push(src.charCodeAt(i) & 0xff); i++;
           }
-          if (i < n && src[i] === q && bytes.length >= 4) {
-            strings.push(bytes);
-            i++; // consume closing quote
-            continue;
-          }
-          // failed parse — reset to after opening quote
-          i = start + 1;
-          continue;
+          if (i < n && src[i] === q && bytes.length >= 4) { strings.push(bytes); i++; continue; }
+          i = start + 1; continue;
         }
-        // not a decimal-escape string — skip to close of quote (simple)
-        while (i < n && src[i] !== q) {
-          if (src[i] === "\\" && i + 1 < n) i += 2;
-          else i++;
-        }
+        while (i < n && src[i] !== q) { if (src[i] === "\\" && i + 1 < n) i += 2; else i++; }
         if (i < n) i++;
         continue;
       }
       i++;
     }
-
-    // Dedup consecutive identical (sometimes C is built twice) — keep unique by content
-    // but preserve order; only drop exact consecutive dups
-    const deduped = [];
-    let prevKey = null;
-    for (const b of strings) {
-      const k = b.length + ":" + b.slice(0, 8).join(",") + ":" + b.slice(-4).join(",");
-      if (k === prevKey) continue;
-      prevKey = k;
-      deduped.push(b);
-    }
-    return deduped.length ? deduped : strings;
+    return strings;
   }
 
-  // ---------- parse shuffle: for h,v in ipairs({{a;b};{c;d};...}) ----------
   function extractShuffle(src) {
     const pairs = [];
-    // Locate ipairs({{ pattern
     const markers = ["ipairs({{", "ipairs( { {", "ipairs({\n{"];
-    let idx = -1;
-    let marker = "";
-    for (const m of markers) {
-      idx = src.indexOf(m);
-      if (idx >= 0) {
-        marker = m;
-        break;
-      }
-    }
+    let idx = -1, marker = "";
+    for (const m of markers) { idx = src.indexOf(m); if (idx >= 0) { marker = m; break; } }
     if (idx < 0) {
-      // looser: ipairs then {{ within 40 chars
       const re = /ipairs\s*\(\s*\{/;
       const m = re.exec(src);
       if (!m) return pairs;
       idx = m.index;
-      // find first {{ after
       const sub = src.slice(idx, idx + 200);
       const br = sub.indexOf("{{");
       if (br < 0) return pairs;
       idx = idx + br;
-    } else {
-      idx = idx + marker.indexOf("{{");
-    }
+    } else { idx = idx + marker.indexOf("{{"); }
 
-    // From idx pointing at first '{', parse nested table of {expr;expr} or {expr,expr}
-    // Linear brace walk
-    let depth = 0;
-    let i = idx;
+    let depth = 0, i = idx;
     const n = src.length;
     let tableStart = -1;
     while (i < n) {
       const c = src[i];
-      if (c === "{") {
-        if (depth === 0) tableStart = i;
-        depth++;
-      } else if (c === "}") {
+      if (c === "{") { if (depth === 0) tableStart = i; depth++; }
+      else if (c === "}") {
         depth--;
         if (depth === 0) {
-          // finished outer table
           const body = src.slice(tableStart + 1, i);
-          // split into pair bodies: look for { ... }
           let j = 0;
           while (j < body.length) {
             if (body[j] === "{") {
-              let d = 1;
-              let k = j + 1;
-              while (k < body.length && d > 0) {
-                if (body[k] === "{") d++;
-                else if (body[k] === "}") d--;
-                k++;
-              }
+              let d = 1, k = j + 1;
+              while (k < body.length && d > 0) { if (body[k] === "{") d++; else if (body[k] === "}") d--; k++; }
               const pairBody = body.slice(j + 1, k - 1);
-              // split on ; or ,
               const parts = pairBody.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
-              if (parts.length >= 2) {
-                const a = evalExpr(parts[0]);
-                const b = evalExpr(parts[1]);
-                if (a !== 0 || b !== 0) pairs.push([a, b]);
-              }
-              j = k;
-              continue;
+              if (parts.length >= 2) { const a = evalExpr(parts[0]); const b = evalExpr(parts[1]); if (a !== 0 || b !== 0) pairs.push([a, b]); }
+              j = k; continue;
             }
             j++;
           }
@@ -572,119 +540,75 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
         }
       }
       i++;
-      // safety
-      if (i - idx > 2_000_000) break;
+      if (i - idx > 2000000) break;
     }
     return pairs;
   }
 
   function applyShuffle(C, pairs) {
-    // Lua is 1-based. pairs are (i, j) swaps or assignment style.
-    // Common Luraph form: for h,v in ipairs({{i;j};...}) do C[h], C[v] = C[v], C[h] end
-    // or C[h] = C[v] depending on exact sample. We support swap.
     const arr = C.slice();
     for (const [a, b] of pairs) {
-      const i = a | 0;
-      const j = b | 0;
+      const i = a | 0; const j = b | 0;
       if (i >= 1 && i <= arr.length && j >= 1 && j <= arr.length) {
-        const tmp = arr[i - 1];
-        arr[i - 1] = arr[j - 1];
-        arr[j - 1] = tmp;
+        const tmp = arr[i - 1]; arr[i - 1] = arr[j - 1]; arr[j - 1] = tmp;
       }
     }
     return arr;
   }
 
-  // ---------- P-table ----------
   function extractPTable(src) {
-    const map = Object.create(null); // char -> number
+    const map = Object.create(null);
     let idx = src.indexOf("local P=");
     if (idx < 0) idx = src.indexOf("P={");
     if (idx < 0) return map;
-
-    // find opening {
     let brace = src.indexOf("{", idx);
     if (brace < 0) return map;
-    let depth = 0;
-    let i = brace;
+    let depth = 0, i = brace;
     const n = src.length;
     let end = -1;
     while (i < n) {
       if (src[i] === "{") depth++;
-      else if (src[i] === "}") {
-        depth--;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
+      else if (src[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
       i++;
       if (i - brace > 500000) break;
     }
     if (end < 0) return map;
     const body = src.slice(brace + 1, end);
-
-    // entries: key=expr  key can be letter, number, or ["x"]
-    // linear scan
     let j = 0;
     while (j < body.length) {
-      // skip whitespace and commas
       while (j < body.length && /[\s,]/.test(body[j])) j++;
       if (j >= body.length) break;
-
       let key = null;
-      if (body[j] === "[" ) {
-        // ["a"] or [97]
+      if (body[j] === "[") {
         const close = body.indexOf("]", j);
         if (close < 0) break;
         const inner = body.slice(j + 1, close).trim();
-        if ((inner[0] === '"' || inner[0] === "'") && inner.length >= 3) {
-          key = inner[1];
-        } else {
-          const num = evalExpr(inner);
-          key = String.fromCharCode(num & 0xff);
-        }
+        if ((inner[0] === '"' || inner[0] === "'") && inner.length >= 3) key = inner[1];
+        else { const num = evalExpr(inner); key = String.fromCharCode(num & 0xff); }
         j = close + 1;
-      } else if (/[A-Za-z_]/.test(body[j])) {
-        key = body[j];
-        j++;
-      } else {
-        j++;
-        continue;
-      }
-
-      // expect =
+      } else if (/[A-Za-z_]/.test(body[j])) { key = body[j]; j++; }
+      else { j++; continue; }
       while (j < body.length && /\s/.test(body[j])) j++;
       if (body[j] !== "=") continue;
       j++;
       while (j < body.length && /\s/.test(body[j])) j++;
-
-      // expression until , or }
-      let exprStart = j;
-      let d = 0;
+      let exprStart = j, d = 0;
       while (j < body.length) {
         const c = body[j];
         if (c === "{" || c === "(") d++;
-        else if (c === "}" || c === ")") {
-          if (d === 0) break;
-          d--;
-        } else if (c === "," && d === 0) break;
+        else if (c === "}" || c === ")") { if (d === 0) break; d--; }
+        else if (c === "," && d === 0) break;
         j++;
       }
       const expr = body.slice(exprStart, j).trim();
-      if (key != null && expr) {
-        map[key] = evalExpr(expr) & 0xff;
-      }
+      if (key != null && expr) map[key] = evalExpr(expr) & 0xff;
       if (body[j] === ",") j++;
     }
     return map;
   }
 
-  // ---------- Base64 ----------
-  const B64 =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   function b64Decode(bytes) {
-    // bytes is array of char codes that form a base64 string
     let s = "";
     for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
     s = s.replace(/[^A-Za-z0-9+/=]/g, "");
@@ -692,10 +616,8 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     const out = [];
     let i = 0;
     while (i < s.length) {
-      const e1 = B64.indexOf(s[i++]);
-      const e2 = B64.indexOf(s[i++]);
-      const e3 = B64.indexOf(s[i++]);
-      const e4 = B64.indexOf(s[i++]);
+      const e1 = B64.indexOf(s[i++]); const e2 = B64.indexOf(s[i++]);
+      const e3 = B64.indexOf(s[i++]); const e4 = B64.indexOf(s[i++]);
       if (e1 < 0 || e2 < 0) break;
       out.push(((e1 << 2) | (e2 >> 4)) & 0xff);
       if (e3 >= 0) out.push((((e2 & 15) << 4) | (e3 >> 2)) & 0xff);
@@ -704,51 +626,26 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     return out;
   }
 
-  function bytesToLatin1(bytes) {
-    let s = "";
-    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] & 0xff);
-    return s;
- }
-
-  function isPrintable(c) {
-    return (c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13;
-  }
+  function bytesToLatin1(bytes) { let s = ""; for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] & 0xff); return s; }
+  function isPrintable(c) { return (c >= 32 && c <= 126) || c === 9 || c === 10 || c === 13; }
 
   function scoreString(s) {
     if (!s || !s.length) return -1e9;
-    let printable = 0;
-    let bad = 0;
-    for (let i = 0; i < s.length; i++) {
-      const c = s.charCodeAt(i);
-      if (isPrintable(c)) printable++;
-      else if (c === 0) bad += 2;
-      else bad++;
-    }
+    let printable = 0, bad = 0;
+    for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); if (isPrintable(c)) printable++; else if (c === 0) bad += 2; else bad++; }
     const ratio = printable / s.length;
     let score = ratio * 100 - bad * 2;
     if (JUICY_RE.test(s)) score += 80;
-    // prefer mostly ASCII words
     if (/[A-Za-z]{3,}/.test(s)) score += 15;
     if (ratio < 0.55) score -= 40;
     return score;
   }
 
-  // ---------- decryption attempts ----------
   function applyPMap(bytes, pMap, reverse) {
     if (!pMap || !Object.keys(pMap).length) return bytes.slice();
-    // Build forward: charCode → mapped byte, and inverse
-    const fwd = new Uint8Array(256);
-    const inv = new Uint8Array(256);
-    for (let i = 0; i < 256; i++) {
-      fwd[i] = i;
-      inv[i] = i;
-    }
-    for (const k of Object.keys(pMap)) {
-      const from = k.charCodeAt(0) & 0xff;
-      const to = pMap[k] & 0xff;
-      fwd[from] = to;
-      inv[to] = from;
-    }
+    const fwd = new Uint8Array(256); const inv = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) { fwd[i] = i; inv[i] = i; }
+    for (const k of Object.keys(pMap)) { const from = k.charCodeAt(0) & 0xff; const to = pMap[k] & 0xff; fwd[from] = to; inv[to] = from; }
     const table = reverse ? inv : fwd;
     const out = new Array(bytes.length);
     for (let i = 0; i < bytes.length; i++) out[i] = table[bytes[i] & 0xff];
@@ -756,69 +653,41 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
   }
 
   function rollingXor(bytes, keyBytes) {
-    const out = new Array(bytes.length);
-    const kl = keyBytes.length || 1;
-    for (let i = 0; i < bytes.length; i++) {
-      out[i] = (bytes[i] ^ keyBytes[i % kl]) & 0xff;
-    }
+    const out = new Array(bytes.length); const kl = keyBytes.length || 1;
+    for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ keyBytes[i % kl]) & 0xff;
     return out;
   }
 
   function rollingXorState(bytes, seed) {
-    // LCG Numerical Recipes: seed = seed * 1664525 + 1013904223
-    let s = (seed >>> 0) || 1;
-    const out = new Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) {
-      s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
-      const kb = (s >>> 16) & 0xff;
-      out[i] = (bytes[i] ^ kb) & 0xff;
-    }
+    let s = (seed >>> 0) || 1; const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; const kb = (s >>> 16) & 0xff; out[i] = (bytes[i] ^ kb) & 0xff; }
     return out;
   }
 
   function rollingXorAcc(bytes, seed) {
-    // simple accumulating XOR stream
-    let k = seed & 0xff;
-    const out = new Array(bytes.length);
-    for (let i = 0; i < bytes.length; i++) {
-      out[i] = (bytes[i] ^ k) & 0xff;
-      k = (k + bytes[i] + 1) & 0xff;
-    }
+    let k = seed & 0xff; const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) { out[i] = (bytes[i] ^ k) & 0xff; k = (k + bytes[i] + 1) & 0xff; }
     return out;
   }
 
   function singleByteXorBrute(bytes) {
-    let best = null;
-    let bestScore = -1e9;
+    let best = null; let bestScore = -1e9;
     for (let key = 0; key < 256; key++) {
       const out = new Array(bytes.length);
       for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ key) & 0xff;
-      const s = bytesToLatin1(out);
-      const sc = scoreString(s);
-      if (sc > bestScore) {
-        bestScore = sc;
-        best = { bytes: out, str: s, score: sc, method: "xor" + key };
-      }
+      const s = bytesToLatin1(out); const sc = scoreString(s);
+      if (sc > bestScore) { bestScore = sc; best = { bytes: out, str: s, score: sc, method: "xor" + key }; }
     }
     return best;
   }
 
   function deriveKeyCandidates(pMap, index, len) {
     const keys = [];
-    // from P values
     const pVals = Object.keys(pMap).map((k) => pMap[k] & 0xff);
-    if (pVals.length) {
-      keys.push(pVals);
-      keys.push(pVals.slice().reverse());
-      // first 8 / 16
-      if (pVals.length >= 8) keys.push(pVals.slice(0, 8));
-      if (pVals.length >= 16) keys.push(pVals.slice(0, 16));
-    }
-    // index / length based
+    if (pVals.length) { keys.push(pVals); keys.push(pVals.slice().reverse()); if (pVals.length >= 8) keys.push(pVals.slice(0, 8)); if (pVals.length >= 16) keys.push(pVals.slice(0, 16)); }
     keys.push([(index * 31 + len) & 0xff]);
     keys.push([len & 0xff, index & 0xff]);
     keys.push([0x5a, 0xa5, 0x3c, 0xc3]);
-    // P char codes
     const pChars = Object.keys(pMap).map((k) => k.charCodeAt(0) & 0xff);
     if (pChars.length) keys.push(pChars);
     return keys;
@@ -826,33 +695,16 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
 
   function decryptOne(rawBytes, pMap, index) {
     const candidates = [];
-
     function consider(bytes, method) {
       if (!bytes || !bytes.length) return;
-      const s = bytesToLatin1(bytes);
-      const sc = scoreString(s);
+      const s = bytesToLatin1(bytes); const sc = scoreString(s);
       candidates.push({ bytes, str: s, score: sc, method });
     }
-
-    // 1) raw as latin1
     consider(rawBytes, "raw");
-
-    // 2) base64 of raw
     const b64 = b64Decode(rawBytes);
-    if (b64) {
-      consider(b64, "b64");
-      // P on b64
-      consider(applyPMap(b64, pMap, false), "b64+P");
-      consider(applyPMap(b64, pMap, true), "b64+Pinv");
-    }
-
-    // 3) P on raw
-    const pFwd = applyPMap(rawBytes, pMap, false);
-    const pInv = applyPMap(rawBytes, pMap, true);
-    consider(pFwd, "P");
-    consider(pInv, "Pinv");
-
-    // 4) rolling XOR variants
+    if (b64) { consider(b64, "b64"); consider(applyPMap(b64, pMap, false), "b64+P"); consider(applyPMap(b64, pMap, true), "b64+Pinv"); }
+    const pFwd = applyPMap(rawBytes, pMap, false); const pInv = applyPMap(rawBytes, pMap, true);
+    consider(pFwd, "P"); consider(pInv, "Pinv");
     const keyCands = deriveKeyCandidates(pMap, index, rawBytes.length);
     for (const kb of keyCands) {
       consider(rollingXor(rawBytes, kb), "rxor");
@@ -860,54 +712,30 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
       consider(rollingXor(pFwd, kb), "P+rxor");
       consider(rollingXor(pInv, kb), "Pinv+rxor");
     }
-
-    // 5) LCG stream with several seeds
-    const seeds = [
-      rawBytes.length,
-      index + 1,
-      (index + 1) * 2654435761,
-      0xdeadbeef,
-      0x12345678,
-      Object.keys(pMap).length,
-    ];
+    const seeds = [rawBytes.length, index + 1, (index + 1) * 2654435761, 0xdeadbeef, 0x12345678, Object.keys(pMap).length];
     for (const seed of seeds) {
       consider(rollingXorState(rawBytes, seed), "lcg");
       if (b64) consider(rollingXorState(b64, seed), "b64+lcg");
       consider(rollingXorState(pInv, seed), "Pinv+lcg");
     }
-
-    // 6) accumulating xor
     for (const seed of [0, 1, index, rawBytes.length & 0xff]) {
       consider(rollingXorAcc(rawBytes, seed), "acc");
       if (b64) consider(rollingXorAcc(b64, seed), "b64+acc");
     }
-
-    // 7) single-byte brute on short strings only
-    if (rawBytes.length <= 48) {
-      const brute = singleByteXorBrute(b64 || rawBytes);
-      if (brute) candidates.push(brute);
-    }
-
-    // pick best
+    if (rawBytes.length <= 48) { const brute = singleByteXorBrute(b64 || rawBytes); if (brute) candidates.push(brute); }
     candidates.sort((a, b) => b.score - a.score);
     return candidates[0] || { str: bytesToLatin1(rawBytes), score: -1e9, method: "raw", bytes: rawBytes };
   }
 
-  // ---------- main pipeline ----------
   function run(src) {
     results = [];
     logEl.innerHTML = "";
     setBar(5);
     log("scanning C table…", "info");
-
     const C = extractCTable(src);
     setStats({ C: C.length });
     log("C entries: " + C.length, C.length ? "ok" : "err");
-    if (!C.length) {
-      log("no decimal-escape strings found. is this the right form?", "err");
-      setBar(0);
-      return;
-    }
+    if (!C.length) { log("no decimal-escape strings found.", "err"); setBar(0); return; }
     setBar(20);
 
     log("parsing shuffle…", "info");
@@ -924,13 +752,6 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     const pCount = Object.keys(pMap).length;
     setStats({ P: pCount });
     log("P entries: " + pCount, pCount ? "ok" : "info");
-    if (pCount) {
-      const sample = Object.keys(pMap)
-        .slice(0, 8)
-        .map((k) => k + "=" + pMap[k])
-        .join(", ");
-      log("P sample: " + sample, "info");
-    }
     setBar(45);
 
     log("decrypting " + shuffled.length + " strings…", "info");
@@ -943,26 +764,14 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
       const best = decryptOne(shuffled[i], pMap, i);
       const isJuicy = JUICY_RE.test(best.str);
       if (isJuicy) juicy++;
-      decoded.push({
-        index: i + 1,
-        str: best.str,
-        score: best.score,
-        method: best.method,
-        juicy: isJuicy,
-        junk: best.score < 20,
-      });
-      if (i % chunk === 0) {
-        setBar(45 + (50 * i) / total);
-      }
+      decoded.push({ index: i + 1, str: best.str, score: best.score, method: best.method, juicy: isJuicy, junk: best.score < 20 });
+      if (i % chunk === 0) setBar(45 + (50 * i) / total);
     }
 
     results = decoded;
     setStats({ Dec: decoded.length, J: juicy });
     setBar(100);
-    log(
-      "done — " + decoded.length + " strings, " + juicy + " juicy hits",
-      "ok"
-    );
+    log("done — " + decoded.length + " strings, " + juicy + " juicy hits", "ok");
     render();
     $("#btnExport").disabled = false;
     $("#btnExportJson").disabled = false;
@@ -972,7 +781,6 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
     const q = ($("#search").value || "").toLowerCase();
     const onlyJ = $("#onlyJuicy").checked;
     const hideJunk = $("#hideJunk").checked;
-
     const frag = document.createDocumentFragment();
     let shown = 0;
     for (const r of results) {
@@ -981,83 +789,42 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
       if (q && r.str.toLowerCase().indexOf(q) < 0) continue;
       const row = document.createElement("div");
       row.className = "str" + (r.juicy ? " juicy" : r.junk ? " junk" : "");
-      const idx = document.createElement("div");
-      idx.className = "idx";
-      idx.textContent = r.index;
-      const val = document.createElement("div");
-      val.className = "val";
-      val.textContent = r.str;
-      const meta = document.createElement("div");
-      meta.className = "meta";
-      meta.textContent =
-        r.method + " · score " + Math.round(r.score) + (r.juicy ? " · JUICY" : "");
-      row.appendChild(idx);
-      row.appendChild(val);
-      row.appendChild(meta);
-      frag.appendChild(row);
-      shown++;
+      const idx = document.createElement("div"); idx.className = "idx"; idx.textContent = r.index;
+      const val = document.createElement("div"); val.className = "val"; val.textContent = r.str;
+      const meta = document.createElement("div"); meta.className = "meta"; meta.textContent = r.method + " · score " + Math.round(r.score) + (r.juicy ? " · JUICY" : "");
+      row.appendChild(idx); row.appendChild(val); row.appendChild(meta);
+      frag.appendChild(row); shown++;
     }
     outEl.innerHTML = "";
-    if (!shown) {
-      outEl.innerHTML = '<div class="empty">no matching strings</div>';
-    } else {
-      outEl.appendChild(frag);
-    }
+    if (!shown) outEl.innerHTML = '<div class="empty">no matching strings</div>';
+    else outEl.appendChild(frag);
   }
 
   function exportTxt() {
-    const lines = results.map(
-      (r) =>
-        "[" +
-        r.index +
-        "] " +
-        (r.juicy ? "* " : "  ") +
-        r.str.replace(/\r?\n/g, "\\n")
-    );
-    download(
-      fileName.replace(/\.\w+$/, "") + "_strings.txt",
-      lines.join("\n"),
-      "text/plain"
-    );
+    const lines = results.map((r) => "[" + r.index + "] " + (r.juicy ? "* " : "  ") + r.str.replace(/\r?\n/g, "\\n"));
+    download(fileName.replace(/\.\w+$/, "") + "_strings.txt", lines.join("\n"), "text/plain");
   }
 
   function exportJson() {
-    download(
-      fileName.replace(/\.\w+$/, "") + "_strings.json",
-      JSON.stringify(results, null, 2),
-      "application/json"
-    );
+    download(fileName.replace(/\.\w+$/, "") + "_strings.json", JSON.stringify(results, null, 2), "application/json");
   }
 
   function download(name, data, type) {
     const blob = new Blob([data], { type });
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
+    a.href = URL.createObjectURL(blob); a.download = name; a.click();
     URL.revokeObjectURL(a.href);
   }
 
-  // ---------- UI wiring ----------
-  const drop = $("#dropZone");
-  const fileInput = $("#fileInput");
-
+  const drop = $("#dropZone"); const fileInput = $("#fileInput");
   drop.addEventListener("click", () => fileInput.click());
-  drop.addEventListener("dragover", (e) => {
-    e.preventDefault();
-    drop.classList.add("over");
-  });
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
   drop.addEventListener("dragleave", () => drop.classList.remove("over"));
   drop.addEventListener("drop", (e) => {
-    e.preventDefault();
-    drop.classList.remove("over");
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      loadFile(e.dataTransfer.files[0]);
-    }
+    e.preventDefault(); drop.classList.remove("over");
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
   });
-  fileInput.addEventListener("change", () => {
-    if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
-  });
+  fileInput.addEventListener("change", () => { if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]); });
 
   function loadFile(f) {
     fileName = f.name || "script.lua";
@@ -1066,6 +833,7 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
       sourceText = String(reader.result || "");
       log("loaded " + fileName + " (" + sourceText.length + " chars)", "ok");
       $("#btnRun").disabled = false;
+      $("#btnVM").disabled = false;
       $("#verTag").textContent = fileName;
     };
     reader.onerror = () => log("read failed", "err");
@@ -1075,29 +843,19 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
   $("#btnRun").addEventListener("click", () => {
     if (!sourceText) return;
     $("#btnRun").disabled = true;
-    try {
-      run(sourceText);
-    } catch (e) {
-      log("fatal: " + (e && e.message ? e.message : e), "err");
-      console.error(e);
-    }
+    try { run(sourceText); } catch (e) { log("fatal: " + (e && e.message ? e.message : e), "err"); console.error(e); }
     $("#btnRun").disabled = false;
   });
   $("#btnExport").addEventListener("click", exportTxt);
   $("#btnExportJson").addEventListener("click", exportJson);
   $("#btnClear").addEventListener("click", () => {
-    sourceText = "";
-    results = [];
-    fileName = "";
-    logEl.innerHTML = "";
-    outEl.innerHTML = '<div class="empty">no results yet</div>';
+    sourceText = ""; results = []; fileName = "";
+    logEl.innerHTML = ""; outEl.innerHTML = '<div class="empty">no results yet</div>';
     setStats({ C: "—", Sh: "—", P: "—", Dec: "—", J: "—" });
     setBar(0);
-    $("#btnRun").disabled = true;
-    $("#btnExport").disabled = true;
-    $("#btnExportJson").disabled = true;
-    $("#verTag").textContent = "ready";
-    fileInput.value = "";
+    $("#btnRun").disabled = true; $("#btnVM").disabled = true;
+    $("#btnExport").disabled = true; $("#btnExportJson").disabled = true;
+    $("#verTag").textContent = "ready"; fileInput.value = "";
   });
   $("#search").addEventListener("input", render);
   $("#onlyJuicy").addEventListener("change", render);
@@ -1106,4 +864,3 @@ and feed the resulting Lua that still contains the C/P/shuffle form.
 </script>
 </body>
 </html>
-  
