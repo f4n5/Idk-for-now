@@ -564,7 +564,7 @@ load = loadstring
 -- run target stage
 local src = __SRC
 __SRC = nil
-local fn, err = __real_load(src, "@stage" .. tostring(${STAGE}))
+local fn, err = __real_load(src, "@stage" .. tostring(__STAGE_NUM__))
 if not fn then
   print("__VM_ERROR__compile: " .. tostring(err))
   print("__VM_FINISHED__")
@@ -578,7 +578,7 @@ print("__VM_FINISHED__")
 `;
 
     // inject stage number into bootstrap
-    const bootSrc = bootstrap.replace("${STAGE}", String(stage));
+    const bootSrc = bootstrap.replace(/__STAGE_NUM__/g, String(stage));
 
     lua.lua_pushstring(L, to_luastring(src));
     lua.lua_setglobal(L, to_luastring("__SRC"));
