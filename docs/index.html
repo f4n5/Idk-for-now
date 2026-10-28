@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // LUA DECRYPTOR STATION v2</title>
+<title>VEX // LUA VM STATION</title>
 <style>
   :root { --bg: #050508; --panel: #0d0d12; --border: #1f1f2a; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; --blue: #00aaff; }
   * { box-sizing: border-box; }
@@ -23,34 +23,17 @@
   .status-indicator.err { background: var(--err); animation: none; }
   #status { color: var(--acc); font-weight: bold; font-size: 13px; }
   
-  .badges { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-  .badge { padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; border: 1px solid transparent; }
-  .badge.luraph { background: rgba(74,0,224,0.2); color: #a07aff; border-color: #4a00e0; }
-  .badge.ironbrew { background: rgba(230,92,0,0.2); color: #ff9e5c; border-color: #e65c00; }
-  .badge.moonsec { background: rgba(0,170,255,0.2); color: #5cd6ff; border-color: #00aaff; }
-  .badge.unknown { background: rgba(255,51,102,0.2); color: #ff7099; border-color: #ff3366; }
-  
   .results { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 16px; white-space: pre-wrap; word-break: break-all; max-height: 65vh; overflow-y: auto; font-size: 13px; display: none; box-shadow: inset 0 0 30px rgba(0,0,0,0.9); }
   
   .hit { color: var(--warn); font-weight: bold; display: block; margin: 6px 0; padding: 10px; background: rgba(255,170,0,0.05); border-left: 3px solid var(--warn); border-radius: 4px; animation: slideIn 0.3s ease-out; }
-  .hit .label { font-size: 10px; color: #888; margin-right: 8px; text-transform: uppercase; background: #222; padding: 2px 4px; border-radius: 2px; }
-  
-  .str { color: var(--txt); display: block; padding: 3px 0; border-bottom: 1px solid #111; }
-  .str:hover { background: #111; }
-  .idx { color: #555; font-size: 11px; margin-right: 10px; user-select: none; }
-  .blue { color: var(--blue); }
-  
   input[type=file]{ display: none; }
-  
-  ::-webkit-scrollbar { width: 8px; }
-  ::-webkit-scrollbar-track { background: #000; }
-  ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
-  ::-webkit-scrollbar-thumb:hover { background: var(--acc); }
 </style>
+<!-- LOAD LUA VM -->
+<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 </head>
 <body>
 
-<h1>VEX // DEOBFUSCATOR</h1>
+<h1>VEX // VM STATION</h1>
 
 <div id="drop">
   <b>TAP HERE</b> to load target<br>
@@ -63,7 +46,6 @@
   <div id="status">waiting for target...</div>
 </div>
 
-<div class="badges" id="badges"></div>
 <div class="results" id="out"></div>
 
 <script>
@@ -71,8 +53,7 @@ const drop = document.getElementById('drop'),
       fi = document.getElementById('fileInput'),
       st = document.getElementById('status'),
       ind = document.getElementById('indicator'),
-      out = document.getElementById('out'),
-      badges = document.getElementById('badges');
+      out = document.getElementById('out');
 
 drop.onclick = () => fi.click();
 ['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
@@ -82,211 +63,90 @@ fi.onchange = e => { if(e.target.files.length) load(e.target.files[0]); };
 
 function log(msg, isErr) {
   out.style.display = 'block';
+  out.innerHTML += `<div style="color:${isErr?'var(--err)':'var(--acc)'}; margin-bottom:4px;">[VM] ${msg}</div>`;
   st.textContent = msg;
   if(isErr) { st.style.color = 'var(--err)'; ind.classList.add('err'); }
-  else { st.style.color = 'var(--acc)'; ind.classList.remove('err'); }
-}
-
-function addBadge(text, type) {
-  badges.innerHTML += `<div class="badge ${type}">${text}</div>`;
 }
 
 function load(file) {
   st.textContent = `reading ${file.name}...`;
-  out.innerHTML = ''; badges.innerHTML = '';
+  out.innerHTML = '';
   const r = new FileReader();
-  r.onload = e => setTimeout(() => process(e.target.result), 100);
+  r.onload = e => setTimeout(() => execute(e.target.result), 100);
   r.onerror = () => log('FileReader died.', true);
   r.readAsText(file);
 }
 
-// --- CORE LOGIC ---
-
-function decEsc(lit){
-  const o=[];let i=0;
-  while(i<lit.length){
-    if(lit[i]==='\\'){
-      const m=/^\d{1,3}/.exec(lit.slice(i+1));
-      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
-      const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
-      if(esc!==undefined){o.push(esc);i+=2;continue;}
-      i+=2;continue;
-    }
-    o.push(lit.charCodeAt(0)&255);i++;
-  }
-  return Uint8Array.from(o);
-}
-
-function toStr(u8) {
-  let s = '';
-  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
-  return s;
-}
-
-// THE MAGIC P-TABLE DECODER
-function parsePTable(src) {
-  // Look for P={...}
-  const pMatch = /local\s+P\s*=\s*\{([^}]+)\}/s.exec(src);
-  if(!pMatch) return null;
-  
-  const map = {};
-  // P={a=123, b=456, ["\123"]=789}
-  // We need to extract the string key and its numeric value
-  const raw = pMatch[1];
-  
-  // regex for: key=value
-  // key can be a-z, or ["\xxx"]
-  const re = /(?:\["([^"]+)"\]|([a-zA-Z0-9_]+))\s*=\s*(-?\d+)/g;
-  let m;
-  while((m = re.exec(raw)) !== null) {
-    let key = m[1] || m[2];
-    let val = parseInt(m[3], 10);
-    
-    // If key is escaped like "\097", decode it
-    if(m[1] && m[1].startsWith('\\')) {
-       key = String.fromCharCode(parseInt(m[1].slice(1), 10));
-    }
-    map[key] = val;
+function execute(src) {
+  if (typeof FengariWeb === 'undefined') {
+    log('Fengari failed to load. Check internet connection.', true); return;
   }
   
-  return map;
-}
-
-function process(src){
-  try {
-    log(`Target loaded: ${src.length} bytes`);
+  log('Starting Lua VM...');
+  
+  // The wrapper that injects the hooks
+  const wrapper = `
+    local real_print = print
     
-    // 1. Detect Obfuscator
-    let isLuraph = src.includes('Luraph') || src.includes('LPH');
-    let isIronBrew = src.includes('IronBrew') || src.includes('IB2');
-    let isMoonSec = src.includes('MoonSec') || src.includes('MSV');
+    -- Intercept string.char to catch decrypted bytes
+    local old_char = string.char
+    string.char = function(...)
+        local s = old_char(...)
+        if #s >= 4 then
+            local low = string.lower(s)
+            if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "webhook") or string.find(low, "api") then
+                real_print("JUICY_HIT: " .. s)
+            end
+        end
+        return s
+    end
     
-    if(isLuraph) addBadge('Luraph', 'luraph');
-    else if(isIronBrew) addBadge('IronBrew', 'ironbrew');
-    else if(isMoonSec) addBadge('MoonSec', 'moonsec');
-    else addBadge('Unknown/Custom', 'unknown');
+    -- Mock Roblox environment so it doesn't immediately crash
+    game = {
+        HttpGet = function(url) real_print("JUICY_HIT_HTTPGET: " .. url) return "" end,
+        GetService = function() return {HttpGet = function() return "" end} end,
+        Players = { LocalPlayer = { Name = "Vex" } }
+    }
+    getgenv = function() return {} end
+    wait = function() end
+    task = { wait = function() end, spawn = function(f) f() end }
+    loadstring = function(s) real_print("JUICY_HIT_LOADSTRING") return function() end end
+    warn = real_print
+    pcall = pcall
 
-    // 2. Extract P Table
-    const pMap = parsePTable(src);
-    if (pMap) {
-      addBadge('P-Table Found', 'luraph');
-      log(`Found P-Table dictionary with ${Object.keys(pMap).length} entries.`);
+    -- Execute the target script
+    local ok, err = pcall(function()
+        ${src}
+    end)
+    
+    if not ok then real_print("VM_ERROR: " .. tostring(err)) end
+    real_print("VM_FINISHED")
+  `;
+
+  // Setup the output printer
+  FengariWeb.set_print_fn(function(text) {
+    if (text.indexOf('JUICY_HIT:') === 0) {
+      let cleaned = text.replace('JUICY_HIT: ', '');
+      out.innerHTML += `<span class="hit">DECRYPTED: ${cleaned}</span>`;
+    } else if (text.indexOf('JUICY_HIT_HTTPGET:') === 0) {
+      let cleaned = text.replace('JUICY_HIT_HTTPGET: ', '');
+      out.innerHTML += `<span class="hit">URL: ${cleaned}</span>`;
+    } else if (text === 'VM_FINISHED') {
+      log('VM finished successfully.');
+    } else if (text.indexOf('VM_ERROR:') === 0) {
+      log('Lua Crash: ' + text, true);
     } else {
-      log(`No P-Table found. Assuming standard Base64.`);
-    }
-
-    // 3. Extract C Table
-    const i = src.indexOf('local C');
-    if(i < 0) throw new Error('No "local C" table found. Header cut?');
-    let b = src.indexOf('{', i);
-    let depth = 0, end = -1;
-    for(let j = b; j < src.length; j++){
-      const c = src[j];
-      if(c === '{') depth++;
-      else if(c === '}'){ depth--; if(depth === 0){ end = j; break; } }
-      else if(c === '"'){ j++; while(j < src.length){ if(src[j]==='\\') j+=2; else if(src[j]==='"') break; else j++; } }
-    }
-    if(end < 0) throw new Error('Unbalanced braces in C table');
-
-    const table = src.slice(b+1, end);
-    const lits = []; let k = 0;
-    while(k < table.length){
-      if(table[k] === '"'){
-        let j = k+1, buf = '';
-        while(j < table.length){
-          if(table[j] === '\\'){ buf += table[j] + table[j+1]; j += 2; continue; }
-          if(table[j] === '"') break;
-          buf += table[j]; j++;
-        }
-        lits.push(buf); k = j+1;
-      } else k++;
-    }
-    
-    log(`Extracted ${lits.length} encrypted strings. Decoding...`);
-
-    let C = lits.map(decEsc);
-    let hits = 0, others = 0;
-    let outHtml = '';
-
-    const juicy = /https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
-
-    // 4. Decode with P-Table Logic
-    C.forEach((u8, idx) => {
-      let decryptedStr = '';
-      
-      if (pMap) {
-        // Luraph custom mapping: each char is mapped through P, then math happens
-        // The exact formula is complex, but often it's just mapping the char through P and converting back to ASCII
-        // Let's try the most common Luraph v14 approach: 
-        // C[i] is base64 string. We decode base64, then map each byte through P.
-        
-        // Actually, the C table contains raw bytes that ARE the base64 string.
-        // Let's convert u8 to string first.
-        let b64str = toStr(u8);
-        
-        // Decode base64
-        let rawBytes = null;
-        try {
-            let s = b64str.replace(/-/g, '+').replace(/_/g, '/');
-            while(s.length % 4) s += '=';
-            rawBytes = atob(s);
-        } catch(e) {}
-        
-        if (rawBytes) {
-            // Now map rawBytes through P
-            let mapped = '';
-            for(let i=0; i<rawBytes.length; i++) {
-                let charCode = rawBytes.charCodeAt(i);
-                // Find the key in P that maps to this charCode
-                // Reverse lookup
-                let found = false;
-                for(let key in pMap) {
-                    if(pMap[key] === charCode) {
-                        mapped += key;
-                        found = true;
-                        break;
-                    }
-                }
-                if(!found) mapped += rawBytes[i]; // fallback
-            }
-            decryptedStr = mapped;
-        } else {
-            decryptedStr = b64str; // fallback
-        }
-      } else {
-        // Standard base64
-        let s = toStr(u8).replace(/-/g, '+').replace(/_/g, '/');
-        try {
-            while(s.length % 4) s += '=';
-            decryptedStr = atob(s);
-        } catch(e) {}
+      // Hide generic spam, but if it looks like a URL, print it
+      if (text.indexOf('http') > -1) {
+         out.innerHTML += `<div>${text}</div>`;
       }
+    }
+  });
 
-      // Check if the decrypted string is readable and juicy
-      if (decryptedStr && decryptedStr.length > 2) {
-          // Clean up non-printable chars
-          let clean = '';
-          for(let i=0; i<decryptedStr.length; i++) {
-              let c = decryptedStr.charCodeAt(i);
-              if((c >= 32 && c < 127) || c === 9 || c === 10 || c === 13) clean += decryptedStr[i];
-          }
-          
-          if (juicy.test(clean)) {
-            outHtml += `<span class="hit"><span class="label">HIT</span>[${idx}] ${clean}</span>`;
-            hits++;
-          } else if (clean.length > 3) {
-            outHtml += `<span class="str"><span class="idx">[${idx}]</span> ${clean}</span>`;
-            others++;
-          }
-      }
-    });
-
-    // Render
-    out.innerHTML = outHtml || '<div style="color:#888">No readable strings found. The P-Table mapping might be wrong.</div>';
-    log(`DONE. ${hits} juicy hits, ${others} decoded strings.`);
-
+  try {
+    FengariWeb.run(wrapper);
   } catch(e) {
-    log('CRASH: ' + e.message, true);
+    log('JS CRASH: ' + e.message, true);
   }
 }
 </script>
