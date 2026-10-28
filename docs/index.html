@@ -3,150 +3,180 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>VEX // LUA VM STATION</title>
+<title>VEX // CRACKER FINAL</title>
 <style>
-  :root { --bg: #050508; --panel: #0d0d12; --border: #1f1f2a; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; --blue: #00aaff; }
-  * { box-sizing: border-box; }
-  body { background: var(--bg); color: var(--txt); font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 16px; margin: 0; overflow-x: hidden; }
-  
-  @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
-  @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-  
-  h1 { font-size: 20px; color: var(--acc); margin: 0 0 20px 0; text-transform: uppercase; letter-spacing: 3px; text-shadow: 0 0 10px rgba(0,255,204,0.4); display: flex; align-items: center; gap: 10px; }
-  h1::before { content: ''; display: inline-block; width: 12px; height: 12px; background: var(--acc); border-radius: 50%; animation: pulse 2s infinite; }
-  
-  #drop { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; text-align: center; color: #888; margin-bottom: 20px; cursor: pointer; transition: all 0.3s; background: var(--panel); }
-  #drop:hover, #drop.hot { border-color: var(--acc); color: var(--acc); background: rgba(0,255,204,0.05); box-shadow: 0 0 30px rgba(0,255,204,0.1); transform: scale(1.01); }
-  
-  .status-bar { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
-  .status-indicator { width: 10px; height: 10px; border-radius: 50%; background: var(--acc); animation: pulse 1s infinite; }
-  .status-indicator.err { background: var(--err); animation: none; }
-  #status { color: var(--acc); font-weight: bold; font-size: 13px; }
-  
-  .results { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 16px; white-space: pre-wrap; word-break: break-all; max-height: 65vh; overflow-y: auto; font-size: 13px; display: none; box-shadow: inset 0 0 30px rgba(0,0,0,0.9); }
-  
-  .hit { color: var(--warn); font-weight: bold; display: block; margin: 6px 0; padding: 10px; background: rgba(255,170,0,0.05); border-left: 3px solid var(--warn); border-radius: 4px; animation: slideIn 0.3s ease-out; }
+  :root { --bg: #050508; --panel: #0d0d12; --border: #1f1f2a; --txt: #d1d1d6; --acc: #00ffcc; --warn: #ffaa00; --err: #ff3366; }
+  body { background: var(--bg); color: var(--txt); font: 14px ui-monospace, monospace; padding: 16px; margin: 0; }
+  h1 { font-size: 18px; color: var(--acc); margin: 0 0 16px 0; text-transform: uppercase; letter-spacing: 2px; }
+  #drop { border: 2px dashed var(--border); border-radius: 12px; padding: 40px 20px; text-align: center; color: #888; margin-bottom: 16px; cursor: pointer; background: var(--panel); }
+  #status { color: var(--acc); margin-bottom: 12px; font-weight: bold; }
+  #out { background: #000; border: 1px solid var(--border); border-radius: 8px; padding: 16px; white-space: pre-wrap; word-break: break-all; max-height: 60vh; overflow-y: auto; font-size: 13px; display: none; }
+  .hit { color: var(--warn); font-weight: bold; display: block; margin: 6px 0; padding: 8px; background: rgba(255,170,0,0.05); border-left: 3px solid var(--warn); border-radius: 4px; }
   input[type=file]{ display: none; }
 </style>
-<!-- LOAD LUA VM -->
-<script src="https://cdn.jsdelivr.net/npm/fengari-web@0.1.4/dist/fengari-web.js"></script>
 </head>
 <body>
 
-<h1>VEX // VM STATION</h1>
-
-<div id="drop">
-  <b>TAP HERE</b> to load target<br>
-  <small>desktop: drag & drop</small>
-</div>
+<h1>VEX // CRACKER FINAL</h1>
+<div id="drop"><b>TAP HERE</b> to load target</div>
 <input type="file" id="fileInput" accept=".txt,.lua">
-
-<div class="status-bar">
-  <div class="status-indicator" id="indicator"></div>
-  <div id="status">waiting for target...</div>
-</div>
-
-<div class="results" id="out"></div>
+<div id="status">waiting...</div>
+<div id="out"></div>
 
 <script>
-const drop = document.getElementById('drop'),
-      fi = document.getElementById('fileInput'),
-      st = document.getElementById('status'),
-      ind = document.getElementById('indicator'),
-      out = document.getElementById('out');
+const drop=document.getElementById('drop'),fi=document.getElementById('fileInput'),
+      st=document.getElementById('status'),out=document.getElementById('out');
 
-drop.onclick = () => fi.click();
-['dragover','dragenter'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('hot'); }));
-['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('hot'); }));
-drop.addEventListener('drop', e => { if(e.dataTransfer.files.length) load(e.dataTransfer.files[0]); });
-fi.onchange = e => { if(e.target.files.length) load(e.target.files[0]); };
+drop.onclick=()=>fi.click();
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.borderColor='var(--acc)'});
+drop.addEventListener('dragleave',()=>drop.style.borderColor='var(--border)');
+drop.addEventListener('drop',e=>{e.preventDefault();drop.style.borderColor='var(--border)';if(e.dataTransfer.files.length)load(e.dataTransfer.files[0]);});
+fi.onchange=e=>{if(e.target.files.length)load(e.target.files[0]);};
 
-function log(msg, isErr) {
-  out.style.display = 'block';
-  out.innerHTML += `<div style="color:${isErr?'var(--err)':'var(--acc)'}; margin-bottom:4px;">[VM] ${msg}</div>`;
-  st.textContent = msg;
-  if(isErr) { st.style.color = 'var(--err)'; ind.classList.add('err'); }
+function log(msg,isErr){
+  out.style.display='block';
+  out.innerHTML += `<div style="color:${isErr?'var(--err)':'var(--acc)'}; margin-bottom:4px;">[*] ${msg}</div>`;
+  st.textContent=msg;
 }
 
-function load(file) {
-  st.textContent = `reading ${file.name}...`;
-  out.innerHTML = '';
-  const r = new FileReader();
-  r.onload = e => setTimeout(() => execute(e.target.result), 100);
-  r.onerror = () => log('FileReader died.', true);
+function load(file){
+  st.textContent=`reading ${file.name}...`; out.innerHTML='';
+  const r=new FileReader();
+  r.onload=e=>setTimeout(()=>process(e.target.result),50);
   r.readAsText(file);
 }
 
-function execute(src) {
-  if (typeof FengariWeb === 'undefined') {
-    log('Fengari failed to load. Check internet connection.', true); return;
+function decEsc(lit){
+  const o=[];let i=0;
+  while(i<lit.length){
+    if(lit[i]==='\\'){
+      const m=/^\d{1,3}/.exec(lit.slice(i+1));
+      if(m){o.push(parseInt(m[0],10)&255);i+=1+m[0].length;continue;}
+      const esc={'n':10,'t':9,'r':13,'\\':92,'"':34,"'":39,'0':0}[lit[i+1]];
+      if(esc!==undefined){o.push(esc);i+=2;continue;}
+      i+=2;continue;
+    }
+    o.push(lit.charCodeAt(0)&255);i++;
   }
-  
-  log('Starting Lua VM...');
-  
-  // The wrapper that injects the hooks
-  const wrapper = `
-    local real_print = print
+  return Uint8Array.from(o);
+}
+
+function toStr(u8) {
+  let s = '';
+  for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i]);
+  return s;
+}
+
+function process(src){
+  try{
+    log(`file loaded: ${src.length} bytes`);
     
-    -- Intercept string.char to catch decrypted bytes
-    local old_char = string.char
-    string.char = function(...)
-        local s = old_char(...)
-        if #s >= 4 then
-            local low = string.lower(s)
-            if string.find(low, "http") or string.find(low, "key") or string.find(low, "discord") or string.find(low, "webhook") or string.find(low, "api") then
-                real_print("JUICY_HIT: " .. s)
-            end
-        end
-        return s
-    end
+    const i = src.indexOf('local C');
+    if(i<0) throw new Error('No local C table');
     
-    -- Mock Roblox environment so it doesn't immediately crash
-    game = {
-        HttpGet = function(url) real_print("JUICY_HIT_HTTPGET: " .. url) return "" end,
-        GetService = function() return {HttpGet = function() return "" end} end,
-        Players = { LocalPlayer = { Name = "Vex" } }
+    let b = src.indexOf('{', i);
+    let depth=0, end=-1;
+    for(let j=b;j<src.length;j++){
+      const c=src[j];
+      if(c==='{')depth++;
+      else if(c==='}'){depth--;if(depth===0){end=j;break;}}
+      else if(c==='"'){j++;while(j<src.length){if(src[j]==='\\')j+=2;else if(src[j]==='"')break;else j++;}}
     }
-    getgenv = function() return {} end
-    wait = function() end
-    task = { wait = function() end, spawn = function(f) f() end }
-    loadstring = function(s) real_print("JUICY_HIT_LOADSTRING") return function() end end
-    warn = real_print
-    pcall = pcall
-
-    -- Execute the target script
-    local ok, err = pcall(function()
-        ${src}
-    end)
     
-    if not ok then real_print("VM_ERROR: " .. tostring(err)) end
-    real_print("VM_FINISHED")
-  `;
+    const table = src.slice(b+1,end);
+    const lits=[]; let k=0;
+    while(k<table.length){
+      if(table[k]==='"'){
+        let j=k+1, buf='';
+        while(j<table.length){
+          if(table[j]==='\\'){buf+=table[j]+table[j+1];j+=2;continue;}
+          if(table[j]==='"')break;
+          buf+=table[j];j++;
+        }
+        lits.push(buf); k=j+1;
+      } else k++;
+    }
+    
+    log(`extracted ${lits.length} strings. running full decrypt sweep...`);
+    
+    let C = lits.map(decEsc);
+    const juicy=/https?:\/\/|discord|webhook|HttpGet|loadstring|check|key|white|auth|token|api|\.php|\.json|init|loader|stage/i;
+    let hits=0, others=0, outHtml='';
 
-  // Setup the output printer
-  FengariWeb.set_print_fn(function(text) {
-    if (text.indexOf('JUICY_HIT:') === 0) {
-      let cleaned = text.replace('JUICY_HIT: ', '');
-      out.innerHTML += `<span class="hit">DECRYPTED: ${cleaned}</span>`;
-    } else if (text.indexOf('JUICY_HIT_HTTPGET:') === 0) {
-      let cleaned = text.replace('JUICY_HIT_HTTPGET: ', '');
-      out.innerHTML += `<span class="hit">URL: ${cleaned}</span>`;
-    } else if (text === 'VM_FINISHED') {
-      log('VM finished successfully.');
-    } else if (text.indexOf('VM_ERROR:') === 0) {
-      log('Lua Crash: ' + text, true);
-    } else {
-      // Hide generic spam, but if it looks like a URL, print it
-      if (text.indexOf('http') > -1) {
-         out.innerHTML += `<div>${text}</div>`;
+    C.forEach((u8, idx) => {
+      let rawStr = toStr(u8);
+      let b64Str = null;
+      
+      // Try base64 variants
+      try {
+        let s = rawStr.replace(/-/g, '+').replace(/_/g, '/');
+        while(s.length % 4) s += '=';
+        b64Str = atob(s);
+      } catch(e) {}
+
+      // TEST 1: Raw String (sometimes it's not encoded)
+      if (juicy.test(rawStr)) {
+        outHtml += `<span class="hit">[${idx}] RAW: ${rawStr}</span>`;
+        hits++;
+        return;
       }
-    }
-  });
+      
+      // TEST 2: B64 String
+      if (b64Str && juicy.test(b64Str)) {
+        outHtml += `<span class="hit">[${idx}] B64: ${b64Str}</span>`;
+        hits++;
+        return;
+      }
 
-  try {
-    FengariWeb.run(wrapper);
+      // TEST 3: Xor Sweep (The Luraph Killer)
+      // Test single byte xor on both raw and b64 versions
+      const testXor = (str) => {
+         for(let key=1; key<255; key++){
+            let dec = '';
+            let score = 0;
+            for(let x=0; x<str.length; x++){
+               let char = str.charCodeAt(x) ^ key;
+               dec += String.fromCharCode(char);
+               if(char >= 32 && char < 127) score++;
+            }
+            if(score > str.length * 0.8 && juicy.test(dec)) {
+               return dec;
+            }
+         }
+         return null;
+      }
+      
+      let xRes = testXor(rawStr);
+      if(xRes) {
+        outHtml += `<span class="hit">[${idx}] XOR: ${xRes}</span>`;
+        hits++;
+        return;
+      }
+      
+      if(b64Str) {
+        let xResB64 = testXor(b64Str);
+        if(xResB64) {
+          outHtml += `<span class="hit">[${idx}] XOR-B64: ${xResB64}</span>`;
+          hits++;
+          return;
+        }
+      }
+      
+      // If it's just a normal word, save it
+      if (b64Str && b64Str.length > 3 && b64Str.length < 50) {
+         let clean = b64Str.replace(/[^\x20-\x7E]/g, '');
+         if(clean.length > 3) {
+             outHtml += `<span style="color:#888; display:block; padding:2px 0;">[${idx}] ${clean}</span>`;
+             others++;
+         }
+      }
+    });
+
+    out.innerHTML = outHtml || '<div style="color:#888">Nothing found.</div>';
+    log(`DONE. ${hits} hits, ${others} strings.`);
+
   } catch(e) {
-    log('JS CRASH: ' + e.message, true);
+    log('CRASH: '+e.message, true);
   }
 }
 </script>
