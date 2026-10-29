@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph V14+ / WeAreDevs Deobfuscator — Shiv</title>
+<title>Luraph / MoonSec / WAD Deobfuscator — Shiv</title>
 <style>
 :root {
   --bg: #0d0f14;
@@ -309,6 +309,25 @@ button.copy { background: #2d3436; }
 button.report { background: #5865f2; border-color: #5865f2; color: #fff; }
 button.report:hover { filter: brightness(1.08); }
 
+
+.badge-obf {
+  display: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  margin-left: 8px;
+}
+.badge-obf.show { display: inline-block; }
+.badge-obf.luraph { background: #5b8def; color: #0a0e16; }
+.badge-obf.moonsec { background: #a855f7; color: #1a0a22; animation: softGlow 1.6s ease-in-out infinite; }
+.badge-obf.wad { background: #6c5ce7; color: #fff; }
+.badge-obf.ironbrew { background: #f59e0b; color: #1a1000; }
+.badge-obf.generic { background: #64748b; color: #fff; }
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -521,7 +540,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <h1>Luraph V14+ String Deobfuscator</h1>
   <span class="tag">static · C / P / shuffle · URL · auto-chain</span>
   <span class="tag">fengari offline</span>
-  <span class="tag" id="verTag">ready</span>
+  <span class="tag" id="verTag">ready</span><span class="badge-obf" id="obfBadge"></span>
   <span class="troll-badge" id="trollBadge">TROLL SCRIPT DETECTED</span>
 </header>
 <main>
@@ -677,6 +696,11 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <summary>Report Pack</summary>
       <p>Builds Markdown + JSON with obfuscator guess, webhooks, keys, URLs, and juicy strings for ScriptBlox / Discord reports. Also copies markdown to the clipboard.</p>
     </details>
+    <details>
+      <summary>MoonSec V3+</summary>
+      <p>Detects the <code>This file was protected with MoonSec V3.x</code> banner and the <code>:gsub('.+', function() … end)</code> init. Static path extracts literals + best-effort XOR/shuffle. VM hooks <code>string.gsub</code> so init side-effects run; Auto-Chain strips the gsub head and peels nested <code>return(function(...))</code>.</p>
+    </details>
+
 
   </div>
 
@@ -1080,6 +1104,11 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
     opts = opts || {};
     const maxDepth = opts.maxDepth || 5;
     src = stripBomAndNoise(src);
+    if (typeof window.__preprocessStage === "function") {
+      const pre = window.__preprocessStage(src);
+      if (pre && pre !== src) src = pre;
+    }
+
     log("[STAGE " + stage + "] payload head: " + payloadPreview(src, 100), "info");
     if (!src || !src.length) {
       log("[STAGE " + stage + "] empty payload after sanitize", "err");
@@ -1169,6 +1198,12 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       }
       if (line.indexOf("__CAP_CHAR__") === 0) { capture(line.slice(12), "char"); return 0; }
       if (line.indexOf("__CAP_CONCAT__") === 0) { capture(line.slice(14), "concat"); return 0; }
+      if (line.indexOf("__CAP_MOONSEC_INIT__") === 0) {
+        capture(line.slice(20), "moonsec-init");
+        log("MoonSec init gsub captured", "ok");
+        return 0;
+      }
+      if (line.indexOf("__CAP_GSUB_FN__") === 0) { return 0; }
       if (line.indexOf("__CAP_GSUB__") === 0) { capture(line.slice(12), "gsub"); return 0; }
       if (line.indexOf("__CAP_PREVIEW__") === 0) {
         log("[STAGE " + stage + "] lua-side head: " + payloadPreview(line.slice(16), 100), "info");
@@ -1217,12 +1252,33 @@ end
 
 local _gsub = string.gsub
 string.gsub = function(s, pat, repl, n)
-  local out, c = _gsub(s, pat, repl, n)
+  -- MoonSec V3 init: ('This file was protected with MoonSec V3.x'):gsub('.+', function() _VAR=0 end)
+  if type(s) == "string" and type(pat) == "string" and type(repl) == "function" then
+    local low = string.lower(s)
+    if string.find(low, "protected with", 1, true) or string.find(low, "moonsec", 1, true)
+       or string.find(low, "obfuscator", 1, true) or string.find(low, "ironbrew", 1, true) then
+      print("__CAP_MOONSEC_INIT__" .. s)
+      -- still run the repl so environment vars get set
+      local ok, a, b = pcall(function() return _gsub(s, pat, repl, n) end)
+      if ok then return a, b end
+    end
+  end
+  -- capture random global writes from gsub callbacks via setfenv is hard; run normally
+  local out, c
+  if n ~= nil then out, c = _gsub(s, pat, repl, n) else out, c = _gsub(s, pat, repl) end
   if type(out) == "string" and #out >= 4 and out ~= s then
     print("__CAP_GSUB__" .. out)
   end
+  -- if repl is function, also try to capture side-effect globals after call
+  if type(repl) == "function" and type(s) == "string" and #s < 400 then
+    print("__CAP_GSUB_FN__" .. tostring(pat) .. " on " .. string.sub(s, 1, 80))
+  end
   return out, c
 end
+
+-- MoonSec often uses weird local names like local 0= or local _VAR=
+-- Allow numeric-looking identifiers by not breaking on them; deep proxy already covers missing globals.
+
 
 
 -- ========== Universal Fallback Mock System ==========
@@ -2529,6 +2585,12 @@ print("__VM_FINISHED__")
   }
 
   function run(src) {
+    const _routed = (typeof routeByObfuscator === "function") ? routeByObfuscator(src) : false;
+    if (_routed && window.__OBF_INFO && window.__OBF_INFO.id === "moonsec") {
+      // MoonSec static already executed; still allow further buttons
+      return;
+    }
+
     results = [];
     logEl.innerHTML = "";
     setBar(3);
@@ -2704,6 +2766,9 @@ print("__VM_FINISHED__")
       $("#btnVM").disabled = false;
       if ($("#btnWAD")) $("#btnWAD").disabled = false;
       if ($("#btnPatch")) $("#btnPatch").disabled = false;
+      if (typeof detectObfuscator === "function" && typeof setObfBadge === "function") {
+        try { setObfBadge(detectObfuscator(sourceText)); } catch (e) {}
+      }
       $("#btnChain").disabled = false;
       $("#verTag").textContent = fileName;
       const F = getFengari();
@@ -3611,6 +3676,261 @@ print("__VM_FINISHED__")
       return r;
     };
   }
+
+  
+  // ===== Universal obfuscator detection =====
+  function detectObfuscator(src) {
+    const s = (src || "").slice(0, 8000);
+    const head = s.slice(0, 1500);
+    const info = { id: "unknown", label: "Unknown", version: null, confidence: 0 };
+
+    // MoonSec V3.x — header comment / gsub init
+    if (/This file was protected with MoonSec\s*V?([0-9.]+)/i.test(s)) {
+      const m = s.match(/MoonSec\s*V?([0-9.]+)/i);
+      info.id = "moonsec";
+      info.label = "MoonSec V" + (m ? m[1] : "3+");
+      info.version = m ? m[1] : "3+";
+      info.confidence = 0.98;
+      return info;
+    }
+    if (/:gsub\s*\(\s*['\"]\.?\+['\"]\s*,\s*function\s*\(/.test(head) && /return\s*\(\s*function/.test(head)) {
+      // common MoonSec-style init without exact banner
+      if (/MoonSec/i.test(s) || /_G\[/.test(head) || /local\s+0\s*=/.test(head)) {
+        info.id = "moonsec";
+        info.label = "MoonSec V3+ (pattern)";
+        info.confidence = 0.85;
+        return info;
+      }
+    }
+    // Luraph V14+
+    if (/local\s+C\s*=\s*\{/.test(s) && /return\s*\(\s*function/.test(s) && (/\\[0-9]{2,3}/.test(s) || /ipairs\s*\(\s*\{/.test(s))) {
+      info.id = "luraph";
+      info.label = "Luraph V14+";
+      info.confidence = 0.95;
+      return info;
+    }
+    if (typeof isLuraphShellHead === "function" && isLuraphShellHead(s)) {
+      info.id = "luraph";
+      info.label = "Luraph V14+";
+      info.confidence = 0.9;
+      return info;
+    }
+    // WeAreDevs / Prometheus
+    if (/wearedevs\.net\/obfuscator/i.test(s) || (/Prometheus/i.test(s) && /return\s*\(\s*function/.test(s))) {
+      info.id = "wad";
+      info.label = "WeAreDevs / Prometheus";
+      info.confidence = 0.92;
+      return info;
+    }
+    if (typeof detectWeAreDevs === "function" && detectWeAreDevs(s)) {
+      info.id = "wad";
+      info.label = "WeAreDevs / Prometheus";
+      info.confidence = 0.8;
+      return info;
+    }
+    // IronBrew
+    if (/IronBrew|IRONBREW|IB_INJECT/i.test(s) || (/getfenv\s*\(\s*0\s*\)/.test(s) && /wrap\s*\(/.test(s) && /bytecode/i.test(s))) {
+      info.id = "ironbrew";
+      info.label = "IronBrew";
+      info.confidence = 0.85;
+      return info;
+    }
+    // Generic custom VM
+    if (/return\s*\(\s*function\s*\(/.test(s) && (/string\.char/.test(s) || /bit32|bit\./.test(s)) && s.length > 5000) {
+      info.id = "generic";
+      info.label = "Generic / Custom VM";
+      info.confidence = 0.55;
+      return info;
+    }
+    return info;
+  }
+
+  function setObfBadge(info) {
+    const b = $("#obfBadge");
+    if (!b) return;
+    b.className = "badge-obf";
+    if (!info || info.id === "unknown") {
+      b.classList.remove("show");
+      b.textContent = "";
+      return;
+    }
+    b.textContent = info.label;
+    b.classList.add("show", info.id === "moonsec" ? "moonsec" : info.id === "luraph" ? "luraph" : info.id === "wad" ? "wad" : info.id === "ironbrew" ? "ironbrew" : "generic");
+  }
+
+  // ===== MoonSec static helpers =====
+  function extractMoonSecBanner(src) {
+    const m = (src || "").match(/This file was protected with MoonSec\s*V?([0-9.]+)/i);
+    return m ? m[0] : null;
+  }
+
+  function extractMoonSecInner(src) {
+    // strip the leading ('...'):gsub(...) then keep return(function...
+    let s = stripBomAndNoise(src || "");
+    // remove leading gsub init expression(s)
+    s = s.replace(/^\s*\(\s*['\"][^'\"]*['\"]\s*\)\s*:\s*gsub\s*\(\s*['\"][^'\"]*['\"]\s*,\s*function\s*\([^)]*\)[\s\S]*?end\s*\)\s*/i, "");
+    // sometimes multiple statements before return
+    const idx = s.search(/return\s*\(\s*function/);
+    if (idx >= 0) s = s.slice(idx);
+    return s;
+  }
+
+  function moonSecShuffleXor(bytes, key) {
+    // common MS pattern: index shuffle + rolling xor — best-effort static
+    const out = bytes.slice();
+    const k = (key || 0x55) & 0xff;
+    for (let i = 0; i < out.length; i++) {
+      out[i] = (out[i] ^ ((k + i * 7) & 0xff)) & 0xff;
+    }
+    return out;
+  }
+
+  function runMoonSecStatic(src) {
+    results = [];
+    logEl.innerHTML = "";
+    document.body.classList.add("busy");
+    setBar(5);
+    const info = detectObfuscator(src);
+    setObfBadge(info);
+    log("MoonSec path — " + info.label, "ok");
+    const banner = extractMoonSecBanner(src);
+    if (banner) log("banner: " + banner, "info");
+    const inner = extractMoonSecInner(src);
+    log("inner payload head: " + (inner || "").slice(0, 80).replace(/\n/g, " "), "info");
+    setBar(20);
+
+    // pull string literals (decimal escapes + plain)
+    const lits = [];
+    const re = /"((?:\\[0-9]{1,3}|\\x[0-9a-fA-F]{2}|[^"\\]){4,})"/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const raw = m[1];
+      const bytes = [];
+      let i = 0;
+      while (i < raw.length) {
+        if (raw[i] === "\\" && i + 1 < raw.length) {
+          if (raw[i + 1] >= "0" && raw[i + 1] <= "9") {
+            let d = raw[i + 1], j = i + 2;
+            if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") {
+              d += raw[j++];
+              if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") d += raw[j++];
+            }
+            bytes.push(parseInt(d, 10) & 0xff);
+            i = j;
+            continue;
+          }
+          if (raw[i + 1] === "x" && i + 3 < raw.length) {
+            bytes.push(parseInt(raw.substr(i + 2, 2), 16) & 0xff);
+            i += 4;
+            continue;
+          }
+          bytes.push(raw.charCodeAt(i + 1) & 0xff);
+          i += 2;
+          continue;
+        }
+        bytes.push(raw.charCodeAt(i) & 0xff);
+        i++;
+      }
+      if (bytes.length >= 3) lits.push(bytes);
+    }
+    log("literals: " + lits.length, "info");
+    setBar(40);
+
+    let juicy = 0;
+    const decoded = [];
+    for (let i = 0; i < lits.length; i++) {
+      const raw = lits[i];
+      const cands = [];
+      function consider(bytes, method) {
+        if (!bytes || !bytes.length) return;
+        const str = bytesToLatin1(bytes);
+        cands.push({ str, score: scoreString(str), method });
+      }
+      consider(raw, "raw");
+      const b64 = typeof b64Decode === "function" ? b64Decode(raw) : null;
+      if (b64) consider(b64, "b64");
+      for (const key of [0x55, 0x13, 0x37, 0x5a, 0xa5, 0xff, 0x00, 0x42]) {
+        consider(moonSecShuffleXor(raw, key), "ms-xor");
+        if (b64) consider(moonSecShuffleXor(b64, key), "b64+ms-xor");
+      }
+      if (typeof rotN === "function") {
+        for (let n = 1; n < 16; n++) consider(rotN(raw, n), "rot" + n);
+      }
+      if (typeof multiByteXor === "function") {
+        for (const key of [[0xde, 0xad], [0x13, 0x37], [0x4d, 0x53]]) {
+          consider(multiByteXor(raw, key), "mxor");
+        }
+      }
+      cands.sort((a, b) => b.score - a.score);
+      const best = cands[0] || { str: bytesToLatin1(raw), score: -1e9, method: "raw" };
+      const isJ = JUICY_RE.test(best.str);
+      if (isJ) juicy++;
+      decoded.push({
+        index: decoded.length + 1,
+        str: best.str,
+        score: best.score,
+        method: best.method,
+        juicy: isJ,
+        junk: best.score < 20,
+      });
+      if (i % 25 === 0) setBar(40 + (50 * i) / Math.max(1, lits.length));
+    }
+    results = decoded;
+    setStats({ Dec: decoded.length, J: juicy, C: lits.length, Sh: "ms", P: "—" });
+    setBar(100);
+    log("MoonSec static done — " + decoded.length + " strings, " + juicy + " juicy", "ok");
+    document.body.classList.remove("busy");
+    render();
+    if ($("#btnExport")) $("#btnExport").disabled = false;
+    if ($("#btnExportJson")) $("#btnExportJson").disabled = false;
+    if ($("#btnReport")) $("#btnReport").disabled = false;
+  }
+
+  // isMoonSec shell for chain
+  function isMoonSecShell(s) {
+    s = stripBomAndNoise(s || "");
+    if (/MoonSec\s*V?[0-9]/i.test(s)) return true;
+    if (/:gsub\s*\(\s*['\"]\.?\+['\"]\s*,\s*function/.test(s.slice(0, 800)) && /return\s*\(\s*function/.test(s)) return true;
+    return false;
+  }
+
+  // Hook loadFile / run entry to auto-detect and route
+  function routeByObfuscator(src) {
+    const info = detectObfuscator(src);
+    setObfBadge(info);
+    log("detector: " + info.label + " (confidence " + info.confidence + ")", "info");
+    window.__OBF_INFO = info;
+    if (info.id === "moonsec") {
+      // static first; user can still hit VM / chain
+      runMoonSecStatic(src);
+      return true;
+    }
+    return false;
+  }
+
+  // Patch chain shell detection to treat MoonSec as nested stage
+  if (typeof isLuraphShellHead === "function") {
+    const _isL = isLuraphShellHead;
+    isLuraphShellHead = function(s) {
+      return _isL(s) || isMoonSecShell(s);
+    };
+  }
+
+  // Capture MOONSEC_INIT in runOneStage print handler if present
+  // We tag finalSource when chain peels return(function)
+  const _setClean = typeof setCleanSource === "function" ? setCleanSource : function () {};
+
+  // When Auto-Chain sees moonsec, strip banner for next stage
+  window.__preprocessStage = function(src) {
+    if (isMoonSecShell(src)) {
+      const inner = extractMoonSecInner(src);
+      if (inner && inner.length > 50 && inner !== src) {
+        log("MoonSec: stripped gsub init → inner return(function…)", "ok");
+        return inner;
+      }
+    }
+    return src;
+  };
 
   setTimeout(() => {
     const F = getFengari();
