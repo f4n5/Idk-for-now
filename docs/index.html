@@ -1125,6 +1125,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <button type="button" class="app-tab" data-app="console">Console</button>
   <button type="button" class="app-tab" data-app="tools">Tools</button>
   <button type="button" class="app-tab" data-app="lab">Lab</button>
+  <button type="button" class="app-tab" data-app="regex">Regex</button>
 </nav>
 <main>
 <div class="app-panel active" id="panelDeobf" data-app="deobf">
@@ -1544,6 +1545,53 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+
+<div class="app-panel" id="panelRegex" data-app="regex">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Regex lab · extract · replace · presets</h2>
+      <span class="tag">client-side</span>
+    </div>
+    <div style="padding:14px 16px;display:grid;gap:12px">
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">INPUT</h2>
+        <textarea id="rxIn" placeholder="paste script or log" style="min-height:140px"></textarea>
+      </div>
+      <div class="row" style="align-items:stretch">
+        <input type="text" id="rxPattern" placeholder="regex pattern" style="flex:1;min-width:160px;background:#0a0e16;border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:0.78rem">
+        <input type="text" id="rxFlags" value="g" placeholder="flags" style="width:64px;background:#0a0e16;border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text);font-family:var(--mono);font-size:0.78rem" title="g i m s u y">
+        <input type="text" id="rxReplace" placeholder="replace with (optional)" style="flex:1;min-width:120px;background:#0a0e16;border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--mono);font-size:0.78rem">
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btnRxRun">Match / Extract</button>
+        <button type="button" id="btnRxReplace">Replace all</button>
+        <button type="button" class="copy" id="btnRxCopy">Copy matches</button>
+        <button type="button" id="btnRxToDeobf">→ Deobf</button>
+        <button type="button" id="btnRxLoadSource">Load source</button>
+        <button type="button" id="btnRxLoadClean">Load clean</button>
+      </div>
+      <div class="row" id="rxPresets">
+        <button type="button" data-rx="https?:\/\/[^\s&quot;'&lt;&gt;]+">URLs</button>
+        <button type="button" data-rx="https:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]+">Webhooks</button>
+        <button type="button" data-rx="[A-Za-z0-9+/]{40,}={0,2}">Base64 blobs</button>
+        <button type="button" data-rx="\\[0-9]{2,3}">Decimal escapes</button>
+        <button type="button" data-rx="loadstring\s*\(">loadstring(</button>
+        <button type="button" data-rx="AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|ghp_[A-Za-z0-9]{36}">API keys</button>
+        <button type="button" data-rx="local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=">local names</button>
+        <button type="button" data-rx="FireServer|InvokeServer|HttpGet|RequestAsync">remotes/http</button>
+      </div>
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">MATCHES / OUTPUT</h2>
+        <div class="console-out" id="rxOut" style="min-height:160px"><div class="line-info">matches list here</div></div>
+      </div>
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">REPLACE RESULT</h2>
+        <textarea id="rxOutText" placeholder="after replace" style="min-height:100px"></textarea>
+      </div>
     </div>
   </div>
 </div>
@@ -6077,6 +6125,80 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     });
   }
   if ($("#btnLabHist")) $("#btnLabHist").addEventListener("click", labHistogram);
+
+  
+  // ===== Regex lab =====
+  function rxRun() {
+    const input = ($("#rxIn") && $("#rxIn").value) || "";
+    const pat = ($("#rxPattern") && $("#rxPattern").value) || "";
+    const flags = ($("#rxFlags") && $("#rxFlags").value) || "g";
+    const out = $("#rxOut");
+    if (!out) return;
+    out.innerHTML = "";
+    function line(msg, cls) {
+      const d = document.createElement("div");
+      d.className = "line-" + (cls || "print");
+      d.textContent = msg;
+      out.appendChild(d);
+    }
+    if (!pat) { line("need a pattern", "err"); return; }
+    let re;
+    try { re = new RegExp(pat, flags.includes("g") ? flags : flags + "g"); }
+    catch (e) { line("invalid regex: " + e.message, "err"); return; }
+    const matches = [];
+    let m;
+    const limit = 5000;
+    while ((m = re.exec(input)) && matches.length < limit) {
+      matches.push(m[0]);
+      if (!re.global) break;
+      if (m[0].length === 0) re.lastIndex++;
+    }
+    const uniq = [...new Set(matches)];
+    line("matches " + matches.length + " · unique " + uniq.length, "info");
+    uniq.slice(0, 400).forEach((u, i) => line((i + 1) + "  " + u, "print"));
+    out.dataset.list = JSON.stringify(uniq);
+    if (typeof pushHistory === "function") pushHistory("regex", uniq.length + " unique");
+  }
+  function rxReplace() {
+    const input = ($("#rxIn") && $("#rxIn").value) || "";
+    const pat = ($("#rxPattern") && $("#rxPattern").value) || "";
+    const flags = ($("#rxFlags") && $("#rxFlags").value) || "g";
+    const rep = ($("#rxReplace") && $("#rxReplace").value) || "";
+    try {
+      const re = new RegExp(pat, flags);
+      const result = input.replace(re, rep);
+      if ($("#rxOutText")) $("#rxOutText").value = result;
+      log("replace done — " + result.length + " chars", "ok");
+    } catch (e) {
+      log("replace failed: " + e.message, "err");
+    }
+  }
+  if ($("#btnRxRun")) $("#btnRxRun").addEventListener("click", rxRun);
+  if ($("#btnRxReplace")) $("#btnRxReplace").addEventListener("click", rxReplace);
+  if ($("#btnRxCopy")) $("#btnRxCopy").addEventListener("click", () => {
+    let list = [];
+    try { list = JSON.parse(($("#rxOut") && $("#rxOut").dataset.list) || "[]"); } catch (e) {}
+    copyText(list.join("\n")).then(() => log("matches copied", "ok"));
+  });
+  if ($("#btnRxToDeobf")) $("#btnRxToDeobf").addEventListener("click", () => {
+    const s = ($("#rxOutText") && $("#rxOutText").value) || ($("#rxIn") && $("#rxIn").value) || "";
+    if ($("#pasteBox")) $("#pasteBox").value = s;
+    sourceText = s;
+    switchApp("deobf");
+  });
+  if ($("#btnRxLoadSource")) $("#btnRxLoadSource").addEventListener("click", () => {
+    if ($("#rxIn")) $("#rxIn").value = sourceText || "";
+  });
+  if ($("#btnRxLoadClean")) $("#btnRxLoadClean").addEventListener("click", () => {
+    if ($("#rxIn")) $("#rxIn").value = lastCleanSource || window.__LAST_PAYLOAD || "";
+  });
+  document.querySelectorAll("#rxPresets [data-rx]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if ($("#rxPattern")) $("#rxPattern").value = btn.getAttribute("data-rx");
+      if ($("#rxFlags")) $("#rxFlags").value = "g";
+      rxRun();
+    });
+  });
 
   setTimeout(() => {
     const F = getFengari();
