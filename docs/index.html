@@ -81,6 +81,42 @@ button:hover, .btn:hover { background: #252d40; border-color: #3a455c; }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 button.vm { background: #df9b3f; border-color: #df9b3f; color: #fff; }
 button.chain { background: #9b59b6; border-color: #9b59b6; color: #fff; }
+
+.paste-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.paste-panel .panel-h { border-bottom: 1px solid var(--border); }
+.paste-panel textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 280px;
+  resize: vertical;
+  border: none;
+  background: #0f1219;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 12px 14px;
+  line-height: 1.4;
+  outline: none;
+}
+.paste-panel textarea::placeholder { color: var(--muted); }
+.paste-actions {
+  padding: 10px 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+.paste-actions .hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-left: auto;
+}
 .troll-badge {
   font-size: 0.72rem;
   font-weight: 700;
@@ -233,6 +269,20 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
     <p><strong>Drop</strong> a .lua / .txt Luraph file here, or <strong>click</strong> to pick</p>
     <p style="margin-top:8px;font-size:0.8rem">linear scanner · shuffle · P-table · multi-path decrypt · offline VM</p>
     <input type="file" id="fileInput" accept=".lua,.txt,.luau,*">
+  </div>
+
+  <div class="paste-panel" id="pastePanel">
+    <div class="panel-h">
+      <h2>Loadstring / Payload Paste</h2>
+      <span class="tag" style="font-size:0.65rem">unwrap → full lua</span>
+    </div>
+    <textarea id="pasteBox" placeholder="paste loadstring(...) here, or a raw return(function()... end)() payload, or any encrypted stage&#10;&#10;example:&#10;loadstring(game:HttpGet(&quot;https://...&quot;))()&#10;— or just the inner encrypted blob —"></textarea>
+    <div class="paste-actions">
+      <button class="primary" id="btnPasteRun">Decrypt Paste</button>
+      <button class="chain" id="btnPasteChain">Auto-Chain Paste</button>
+      <button id="btnPasteClear">Clear Box</button>
+      <span class="hint">strips loadstring(…) wrapper · BOM · runs VM unwrap</span>
+    </div>
   </div>
 
   <div class="row">
@@ -2145,6 +2195,142 @@ print("__VM_FINISHED__")
   $("#onlyJuicy").addEventListener("change", render);
   if ($("#onlyUrls")) $("#onlyUrls").addEventListener("change", render);
   $("#hideJunk").addEventListener("change", render);
+
+
+  // ---------- loadstring paste unwrap ----------
+  function unwrapLoadstringPaste(raw) {
+    let s = String(raw || "").trim();
+    if (!s) return "";
+
+    // If user pasted with a language fence
+    s = s.replace(/^```(?:lua|luau)?\s*/i, "").replace(/\s*```$/i, "").trim();
+
+    // loadstring("...")()  or loadstring([[...]])()
+    // Prefer longest quoted / long-bracket body
+    let best = null;
+
+    // long-bracket: loadstring([=[...]=])()
+    const longRe = /loadstring\s*\(\s*\[(=*)\[([\s\S]*?)\]\1\]\s*\)/i;
+    let m = longRe.exec(s);
+    if (m && m[2] && m[2].length >= 8) best = m[2];
+
+    // quoted forms
+    const qPatterns2 = [
+      /loadstring\s*\(\s*"([\s\S]*?)"\s*\)/i,
+      /loadstring\s*\(\s*'([\s\S]*?)'\s*\)/i,
+      /loadstring\s*\(\s*`([\s\S]*?)`\s*\)/i,
+    ];
+    for (const re of qPatterns2) {
+      m = re.exec(s);
+      if (m && m[1] && (!best || m[1].length > best.length)) best = m[1];
+    }
+
+    // loadstring(game:HttpGet("URL")) — extract URL as juice, keep full paste for chain
+    const httpLs = /loadstring\s*\(\s*game\s*:\s*HttpGet(?:Async)?\s*\(\s*["'`]([^"'`]+)["'`]/i.exec(s);
+    if (httpLs && httpLs[1]) {
+      log("paste contains loadstring(game:HttpGet(\"" + httpLs[1] + "\"))", "info");
+      // can't fetch from browser sandbox reliably for arbitrary hosts; surface URL and still try body if any
+      results = [{
+        index: 1,
+        str: httpLs[1],
+        score: 2000,
+        method: "paste:HttpGet-URL",
+        juicy: true,
+        junk: false
+      }];
+      render();
+      $("#btnExport").disabled = false;
+      $("#btnExportJson").disabled = false;
+    }
+
+    if (best) {
+      // unescape common sequences from quoted strings
+      best = best
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t")
+        .replace(/\\"/g, '"')
+        .replace(/\\'/g, "'")
+        .replace(/\\\\/g, "\\");
+      return stripBomAndNoise(best);
+    }
+
+    // bare payload: return(function... or local C={
+    return stripBomAndNoise(s);
+  }
+
+  function loadPasteIntoSource(alsoLog) {
+    const box = $("#pasteBox");
+    const raw = box ? box.value : "";
+    const unwrapped = unwrapLoadstringPaste(raw);
+    if (!unwrapped || unwrapped.length < 4) {
+      log("paste box empty or too short", "err");
+      return null;
+    }
+    sourceText = unwrapped;
+    fileName = "paste.lua";
+    $("#verTag").textContent = "paste.lua (" + sourceText.length + " chars)";
+    $("#btnRun").disabled = false;
+    $("#btnVM").disabled = false;
+    $("#btnChain").disabled = false;
+    if (alsoLog) log("paste loaded — " + sourceText.length + " chars after unwrap", "ok");
+    log("paste head: " + payloadPreview(sourceText, 100), "info");
+    return sourceText;
+  }
+
+  $("#btnPasteRun").addEventListener("click", () => {
+    results = [];
+    outEl.innerHTML = "";
+    finalSource = "";
+    const badge = $("#trollBadge");
+    if (badge) badge.classList.remove("show");
+    const src = loadPasteIntoSource(true);
+    if (!src) return;
+    $("#btnPasteRun").disabled = true;
+    try {
+      // static first for string tables, then single VM stage
+      run(src);
+      // if static found little, try VM
+      const juicy = results.filter(r => r.juicy).length;
+      if (results.length < 3 || juicy < 1) {
+        log("static thin — running VM stage…", "info");
+        runVM(src);
+      }
+      if (finalSource) {
+        $("#btnFinal").disabled = false;
+      }
+    } catch (e) {
+      log("paste decrypt crash: " + (e && e.message ? e.message : e), "err");
+      console.error(e);
+    }
+    $("#btnPasteRun").disabled = false;
+  });
+
+  $("#btnPasteChain").addEventListener("click", () => {
+    results = [];
+    outEl.innerHTML = "";
+    finalSource = "";
+    const badge = $("#trollBadge");
+    if (badge) badge.classList.remove("show");
+    const src = loadPasteIntoSource(true);
+    if (!src) return;
+    $("#btnPasteChain").disabled = true;
+    $("#btnPasteRun").disabled = true;
+    try {
+      runChain(src);
+    } catch (e) {
+      log("paste chain crash: " + (e && e.message ? e.message : e), "err");
+      console.error(e);
+    }
+    $("#btnPasteChain").disabled = false;
+    $("#btnPasteRun").disabled = false;
+  });
+
+  $("#btnPasteClear").addEventListener("click", () => {
+    const box = $("#pasteBox");
+    if (box) box.value = "";
+    log("paste box cleared", "info");
+  });
 
   // boot check
   setTimeout(() => {
