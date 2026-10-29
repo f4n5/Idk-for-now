@@ -199,6 +199,116 @@ button.patch { background: #e17055; border-color: #e17055; color: #fff; }
 button.patch:hover { filter: brightness(1.08); }
 button.copy { background: #2d3436; }
 
+
+/* ---- final polish ---- */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: #0f1219;
+}
+.tab {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 9px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.hex-grid {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.55;
+  padding: 12px 14px;
+  max-height: 52vh;
+  overflow: auto;
+  white-space: pre;
+  color: var(--muted);
+}
+.hex-grid .addr { color: var(--accent); }
+.hex-grid .ascii { color: var(--good); }
+.hex-grid .byte { color: var(--text); }
+.diff-wrap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  max-height: 52vh;
+  overflow: auto;
+}
+.diff-pane {
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-right: 1px solid var(--border);
+}
+.diff-pane:last-child { border-right: none; }
+.diff-pane h4 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.diff-enc { color: #f07178; }
+.diff-dec { color: var(--good); }
+.ast-view {
+  padding: 12px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  max-height: 52vh;
+  overflow: auto;
+}
+.ast-view .node {
+  padding: 4px 0 4px 12px;
+  border-left: 2px solid var(--border);
+  margin-left: 6px;
+}
+.ast-view .node.http { border-left-color: #5b8def; color: #5b8def; }
+.ast-view .node.load { border-left-color: var(--good); color: var(--good); }
+.ast-view .node.key { border-left-color: var(--warn); color: var(--warn); }
+.ast-view .node.hook { border-left-color: #f07178; color: #f07178; }
+.ast-view .node.rbx { border-left-color: #e08cff; color: #e08cff; }
+.proxy-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+.proxy-row input[type="text"] {
+  flex: 1;
+  min-width: 180px;
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.proxy-row label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.hl-aws { color: #ff9900; font-weight: 700; text-shadow: 0 0 8px rgba(255,153,0,0.45); }
+.hl-openai { color: #10a37f; font-weight: 700; text-shadow: 0 0 8px rgba(16,163,127,0.45); }
+.hl-bottoken { color: #5865f2; font-weight: 700; text-shadow: 0 0 8px rgba(88,101,242,0.55); }
+.hl-github { color: #c9d1d9; font-weight: 700; text-shadow: 0 0 6px rgba(201,209,217,0.4); }
+button.report { background: #5865f2; border-color: #5865f2; color: #fff; }
+button.report:hover { filter: brightness(1.08); }
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -443,6 +553,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
     <button class="chain" id="btnChain" disabled title="Auto-unwrap nested loadstring stages">Auto-Chain VM</button>
     <button class="copy" id="btnCopyJuicy" disabled>Copy Juicy</button>
     <button class="copy" id="btnCopyAll" disabled>Copy All</button>
+    <button class="report" id="btnReport" disabled>Report Pack</button>
     <button id="btnExport" disabled>Export TXT</button>
     <button id="btnExportJson" disabled>Export JSON</button>
     <button id="btnFinal" disabled>Export Clean .lua</button>
@@ -475,10 +586,30 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
         <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="hideJunk" checked> hide junk</label>
       </div>
     </div>
-    <div class="filters">
+    <div class="tabs" id="resultTabs">
+      <button type="button" class="tab active" data-tab="strings">Strings</button>
+      <button type="button" class="tab" data-tab="hex">Hex Viewer</button>
+      <button type="button" class="tab" data-tab="diff">String Diff</button>
+      <button type="button" class="tab" data-tab="ast">AST / Flow</button>
+      <button type="button" class="tab" data-tab="keys">API Keys</button>
+    </div>
+    <div class="proxy-row" id="proxyRow">
+      <label><input type="checkbox" id="useCorsProxy"> CORS proxy fetch</label>
+      <input type="text" id="corsProxy" value="https://corsproxy.io/?" placeholder="proxy prefix">
+      <input type="text" id="fetchUrl" placeholder="https://… remote script URL">
+      <button type="button" id="btnFetchUrl">Fetch → Analyze</button>
+    </div>
+    <div class="filters tab-panel active" data-panel="strings">
       <input type="search" id="search" placeholder="filter strings…">
     </div>
-    <div class="out" id="out"><div class="empty">no results yet</div></div>
+    <div class="out tab-panel active" id="out" data-panel="strings"><div class="empty">no results yet</div></div>
+    <div class="hex-grid tab-panel" id="hexView" data-panel="hex"><div class="empty">no payload bytes yet — run decrypt / chain first</div></div>
+    <div class="diff-wrap tab-panel" id="diffView" data-panel="diff">
+      <div class="diff-pane"><h4>Encrypted / prior</h4><div id="diffEnc" class="diff-enc">—</div></div>
+      <div class="diff-pane"><h4>Decrypted / current</h4><div id="diffDec" class="diff-dec">—</div></div>
+    </div>
+    <div class="ast-view tab-panel" id="astView" data-panel="ast"><div class="empty">no flow yet</div></div>
+    <div class="out tab-panel" id="keysView" data-panel="keys"><div class="empty">no API keys harvested yet</div></div>
   </div>
 
   <details class="tech">
@@ -534,6 +665,19 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <summary>Why 0 juicy on static?</summary>
       <p>Application strings may only exist after the VM constant decoder runs, or they may be encrypted with a per-build key not present as a simple P-table. Run VM or Auto-Chain. If every stage is the same Luraph shell, it’s a troll.</p>
     </details>
+    <details>
+      <summary>Hex Viewer / Diff / AST / Keys</summary>
+      <p>Tabs under results: <b>Hex</b> shows a 16-byte grid of the clean payload; <b>Diff</b> compares a source sample to decrypted text; <b>AST/Flow</b> is a heuristic call-flow (HttpGet, loadstring, webhooks, keys) not a full Luau AST; <b>API Keys</b> harvests AWS/OpenAI/Discord/GitHub/Slack/Stripe/Telegram/JWT patterns.</p>
+    </details>
+    <details>
+      <summary>CORS proxy fetch</summary>
+      <p>Enable the toggle, paste a raw script URL, Fetch → Analyze downloads via corsproxy.io (or your prefix) and runs static. Browser CORS still applies if the proxy is down.</p>
+    </details>
+    <details>
+      <summary>Report Pack</summary>
+      <p>Builds Markdown + JSON with obfuscator guess, webhooks, keys, URLs, and juicy strings for ScriptBlox / Discord reports. Also copies markdown to the clipboard.</p>
+    </details>
+
   </div>
 
 </main>
@@ -3167,6 +3311,306 @@ print("__VM_FINISHED__")
     }
   }, 500);
 
+
+  
+  // ===== Tabs =====
+  function switchTab(name) {
+    document.querySelectorAll("#resultTabs .tab").forEach((t) => {
+      t.classList.toggle("active", t.getAttribute("data-tab") === name);
+    });
+    document.querySelectorAll("[data-panel]").forEach((p) => {
+      p.classList.toggle("active", p.getAttribute("data-panel") === name);
+    });
+    if (name === "hex") renderHex();
+    if (name === "diff") renderDiff();
+    if (name === "ast") renderAst();
+    if (name === "keys") renderKeys();
+  }
+  document.querySelectorAll("#resultTabs .tab").forEach((t) => {
+    t.addEventListener("click", () => switchTab(t.getAttribute("data-tab")));
+  });
+
+  // ===== API key patterns =====
+  const KEY_PATTERNS = [
+    { name: "AWS Access Key", re: /\b(AKIA[0-9A-Z]{16})\b/g, cls: "hl-aws" },
+    { name: "AWS Secret", re: /\b([A-Za-z0-9\/+=]{40})\b/g, cls: "hl-aws", soft: true },
+    { name: "OpenAI", re: /\b(sk-[A-Za-z0-9]{20,})\b/g, cls: "hl-openai" },
+    { name: "OpenAI Proj", re: /\b(sk-proj-[A-Za-z0-9\-_]{20,})\b/g, cls: "hl-openai" },
+    { name: "Discord Bot Token", re: /\b([MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})\b/g, cls: "hl-bottoken" },
+    { name: "Discord Webhook", re: /(https:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]+)/g, cls: "hl-webhook" },
+    { name: "GitHub PAT", re: /\b(ghp_[A-Za-z0-9]{36})\b/g, cls: "hl-github" },
+    { name: "GitHub Fine", re: /\b(github_pat_[A-Za-z0-9_]{20,})\b/g, cls: "hl-github" },
+    { name: "Slack Token", re: /\b(xox[baprs]-[A-Za-z0-9-]{10,})\b/g, cls: "hl-key" },
+    { name: "Google API", re: /\b(AIza[0-9A-Za-z\-_]{35})\b/g, cls: "hl-key" },
+    { name: "Stripe", re: /\b(sk_live_[0-9a-zA-Z]{24,})\b/g, cls: "hl-key" },
+    { name: "Telegram Bot", re: /\b(\d{8,10}:[A-Za-z0-9_-]{30,})\b/g, cls: "hl-key" },
+    { name: "Generic JWT", re: /\b(eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, cls: "hl-key" },
+  ];
+
+  // extend HL_RULES if present
+  if (typeof HL_RULES !== "undefined") {
+    HL_RULES.push(
+      { re: /\b(AKIA[0-9A-Z]{16})\b/g, cls: "hl-aws" },
+      { re: /\b(sk-(?:proj-)?[A-Za-z0-9\-_]{20,})\b/g, cls: "hl-openai" },
+      { re: /\b([MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})\b/g, cls: "hl-bottoken" },
+      { re: /\b(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,})\b/g, cls: "hl-github" }
+    );
+  }
+
+  function harvestKeys(text) {
+    const found = [];
+    const seen = new Set();
+    for (const pat of KEY_PATTERNS) {
+      if (pat.soft) continue; // skip ultra-generic
+      const re = new RegExp(pat.re.source, pat.re.flags);
+      let m;
+      while ((m = re.exec(text))) {
+        const v = m[1] || m[0];
+        if (seen.has(v)) continue;
+        seen.add(v);
+        found.push({ type: pat.name, value: v, cls: pat.cls });
+      }
+    }
+    return found;
+  }
+
+  function renderKeys() {
+    const el = $("#keysView");
+    if (!el) return;
+    const blob = results.map((r) => r.str).join("\n") + "\n" + (lastCleanSource || "") + "\n" + (sourceText || "").slice(0, 50000);
+    const keys = harvestKeys(blob);
+    if (!keys.length) {
+      el.innerHTML = '<div class="empty">no API keys / tokens matched</div>';
+      return;
+    }
+    const frag = document.createDocumentFragment();
+    keys.forEach((k, i) => {
+      const row = document.createElement("div");
+      row.className = "str juicy";
+      row.innerHTML = '<div class="idx">' + (i + 1) + '</div><div class="val"><span class="' + k.cls + '">' +
+        escapeHtml(k.value) + '</span></div><div class="meta">' + escapeHtml(k.type) + "</div>";
+      frag.appendChild(row);
+    });
+    el.innerHTML = "";
+    el.appendChild(frag);
+    log("API key harvester: " + keys.length + " hit(s)", "ok");
+  }
+
+  // ===== Hex viewer =====
+  function bytesFromString(s) {
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
+    return out;
+  }
+
+  function renderHex() {
+    const el = $("#hexView");
+    if (!el) return;
+    let payload = lastCleanSource || "";
+    if (!payload) {
+      // longest result
+      for (const r of results) if ((r.str || "").length > payload.length) payload = r.str;
+    }
+    if (!payload) {
+      el.innerHTML = '<div class="empty">no payload bytes yet</div>';
+      return;
+    }
+    // cap for UI
+    const max = 65536;
+    const bytes = bytesFromString(payload.slice(0, max));
+    let html = "";
+    if (payload.length > max) html += "// showing first " + max + " of " + payload.length + " bytes\n";
+    for (let i = 0; i < bytes.length; i += 16) {
+      const addr = i.toString(16).padStart(8, "0");
+      let hex = "";
+      let ascii = "";
+      for (let j = 0; j < 16; j++) {
+        if (i + j < bytes.length) {
+          const b = bytes[i + j];
+          hex += b.toString(16).padStart(2, "0") + (j === 7 ? "  " : " ");
+          ascii += b >= 32 && b < 127 ? String.fromCharCode(b) : ".";
+        } else {
+          hex += "   ";
+          if (j === 7) hex += " ";
+        }
+      }
+      html += '<span class="addr">' + addr + "</span>  <span class=\"byte\">" + hex + '</span> |<span class="ascii">' +
+        escapeHtml(ascii) + "</span>|\n";
+    }
+    el.innerHTML = html;
+  }
+
+  // ===== Diff =====
+  let lastEncryptedSample = "";
+  function renderDiff() {
+    const enc = $("#diffEnc");
+    const dec = $("#diffDec");
+    if (!enc || !dec) return;
+    let prior = lastEncryptedSample || "";
+    if (!prior && sourceText) {
+      // first C-string-ish sample from source
+      const m = sourceText.match(/"((?:\\[0-9]{2,3}){8,80})"/);
+      if (m) prior = m[1];
+      else prior = sourceText.slice(0, 400);
+    }
+    let cur = lastCleanSource || "";
+    if (!cur) {
+      for (const r of results) {
+        if (r.juicy || r.score > 50) { cur = r.str; break; }
+      }
+      if (!cur && results[0]) cur = results[0].str;
+    }
+    enc.textContent = prior || "—";
+    dec.textContent = cur || "—";
+  }
+
+  // ===== AST / flow (lightweight heuristic, not full Luau parser) =====
+  function renderAst() {
+    const el = $("#astView");
+    if (!el) return;
+    const text = (lastCleanSource || results.map((r) => r.str).join("\n") || sourceText || "").slice(0, 200000);
+    const steps = [];
+    function add(cls, label) { steps.push({ cls, label }); }
+
+    if (/Luraph|local\s+C\s*=\s*\{|return\s*\(\s*function/.test(text)) add("load", "Luraph / packed shell detected");
+    if (/wearedevs\.net\/obfuscator|Prometheus/i.test(text)) add("load", "WeAreDevs / Prometheus markers");
+    if (/loadstring\s*\(/.test(text)) add("load", "Calls loadstring (dynamic execute)");
+    if (/HttpGet|RequestAsync|syn\.request|http\.request/i.test(text)) add("http", "Performs HTTP request(s)");
+    const urls = text.match(/https?:\/\/[^\s"'<>]+/g) || [];
+    const uniq = Array.from(new Set(urls)).slice(0, 12);
+    uniq.forEach((u) => add("http", "URL → " + u.slice(0, 120)));
+    if (/webhook/i.test(text)) add("hook", "Webhook reference present");
+    extractWebhooks(text).forEach((u) => add("hook", "Webhook → " + u));
+    if (/FireServer|InvokeServer|RemoteEvent|RemoteFunction/.test(text)) add("rbx", "Touches remotes (Fire/Invoke)");
+    if (/getfenv|setfenv|getrawmetatable|hookfunction|hookmetamethod/.test(text)) add("load", "Environment / metatable hooks");
+    if (/MarketplaceService|PromptGamePass|PromptPurchase/.test(text)) add("rbx", "Marketplace / gamepass prompts");
+    const keys = harvestKeys(text);
+    keys.slice(0, 15).forEach((k) => add("key", k.type + " → " + k.value.slice(0, 40)));
+    if (!steps.length) {
+      el.innerHTML = '<div class="empty">no high-level flow markers found</div>';
+      return;
+    }
+    el.innerHTML = steps.map((s) => '<div class="node ' + s.cls + '">' + escapeHtml(s.label) + "</div>").join("");
+  }
+
+  // ===== CORS proxy fetch =====
+  async function fetchRemoteScript() {
+    const url = ($("#fetchUrl") && $("#fetchUrl").value || "").trim();
+    if (!url) { log("paste a remote URL first", "err"); return; }
+    const useProxy = $("#useCorsProxy") && $("#useCorsProxy").checked;
+    const prefix = ($("#corsProxy") && $("#corsProxy").value) || "https://corsproxy.io/?";
+    const finalUrl = useProxy ? (prefix + encodeURIComponent(url)) : url;
+    log("fetching " + finalUrl.slice(0, 100) + "…", "info");
+    document.body.classList.add("busy");
+    try {
+      const res = await fetch(finalUrl);
+      const text = await res.text();
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      sourceText = text;
+      fileName = url.split("/").pop() || "remote.lua";
+      log("fetched " + text.length + " chars — running static", "ok");
+      $("#verTag").textContent = fileName;
+      if ($("#btnRun")) $("#btnRun").disabled = false;
+      if ($("#btnVM")) $("#btnVM").disabled = false;
+      if ($("#btnWAD")) $("#btnWAD").disabled = false;
+      if ($("#btnPatch")) $("#btnPatch").disabled = false;
+      if ($("#btnChain")) $("#btnChain").disabled = false;
+      lastEncryptedSample = text.slice(0, 800);
+      run(sourceText);
+    } catch (e) {
+      log("fetch failed: " + (e && e.message ? e.message : e), "err");
+      log("enable CORS proxy or open the URL in a context that allows it", "info");
+    }
+    document.body.classList.remove("busy");
+  }
+  if ($("#btnFetchUrl")) $("#btnFetchUrl").addEventListener("click", fetchRemoteScript);
+
+  // ===== Report pack =====
+  function buildReport() {
+    const hooks = extractWebhooks();
+    const keys = harvestKeys(results.map((r) => r.str).join("\n") + "\n" + (lastCleanSource || ""));
+    const urls = [];
+    const ure = /https?:\/\/[^\s"'<>]+/g;
+    const blob = results.map((r) => r.str).join("\n");
+    let m;
+    while ((m = ure.exec(blob))) urls.push(m[0]);
+    const uniqUrls = Array.from(new Set(urls));
+    let obfuscator = "unknown";
+    if (looksLikeLuraphShell(sourceText || "")) obfuscator = "Luraph V14+";
+    else if (detectWeAreDevs && detectWeAreDevs(sourceText || "")) obfuscator = "WeAreDevs / Prometheus";
+    else if (/MoonSec|moonsec/i.test(sourceText || "")) obfuscator = "MoonSec";
+    else if (/IronBrew|ironbrew/i.test(sourceText || "")) obfuscator = "IronBrew";
+
+    const md = [
+      "# Malicious Script Report",
+      "",
+      "- **File:** " + (fileName || "unknown"),
+      "- **Obfuscator:** " + obfuscator,
+      "- **Recovered strings:** " + results.length,
+      "- **Juicy hits:** " + results.filter((r) => r.juicy).length,
+      "- **Generated:** " + new Date().toISOString(),
+      "",
+      "## Discord Webhooks",
+      ...(hooks.length ? hooks.map((h) => "- `" + h + "`") : ["- (none)"]),
+      "",
+      "## API Keys / Tokens",
+      ...(keys.length ? keys.map((k) => "- **" + k.type + ":** `" + k.value + "`") : ["- (none)"]),
+      "",
+      "## URLs",
+      ...(uniqUrls.slice(0, 40).map((u) => "- " + u)),
+      "",
+      "## Juicy Strings",
+      ...results.filter((r) => r.juicy).slice(0, 50).map((r) => "- `" + r.str.replace(/`/g, "'").slice(0, 200) + "`"),
+      "",
+      "## Notes",
+      "Recovered with Shiv Luraph/WAD deobfuscator. Do not execute the original payload on a production account.",
+    ].join("\n");
+
+    const json = {
+      file: fileName || "unknown",
+      obfuscator,
+      generated: new Date().toISOString(),
+      webhooks: hooks,
+      keys: keys,
+      urls: uniqUrls.slice(0, 100),
+      juicy: results.filter((r) => r.juicy).map((r) => r.str),
+    };
+    return { md, json };
+  }
+
+  function exportReport() {
+    const { md, json } = buildReport();
+    download((fileName || "report").replace(/\.\w+$/, "") + "_report.md", md, "text/markdown");
+    download((fileName || "report").replace(/\.\w+$/, "") + "_report.json", JSON.stringify(json, null, 2), "application/json");
+    copyText(md).then(() => log("report exported + markdown copied", "ok"));
+  }
+  if ($("#btnReport")) {
+    $("#btnReport").addEventListener("click", exportReport);
+  }
+
+  // Enable report when results exist
+  const _setStats2 = setStats;
+  setStats = function(o) {
+    _setStats2(o);
+    if ($("#btnReport")) $("#btnReport").disabled = !results.length;
+    if ($("#btnCopyJuicy")) $("#btnCopyJuicy").disabled = !results.length;
+    if ($("#btnCopyAll")) $("#btnCopyAll").disabled = !results.length;
+  };
+
+  // Keep diff sample on load
+  const _loadFile = typeof loadFile === "function" ? loadFile : null;
+  // after source set, snapshot
+  const origLoadHint = "lastEncryptedSample";
+  // wrap run to snapshot
+  if (typeof run === "function") {
+    const _run = run;
+    run = function(src) {
+      lastEncryptedSample = (src || "").slice(0, 1200);
+      const r = _run(src);
+      try { renderHex(); renderDiff(); renderAst(); renderKeys(); } catch (e) {}
+      return r;
+    };
+  }
 
   setTimeout(() => {
     const F = getFengari();
