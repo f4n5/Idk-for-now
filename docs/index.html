@@ -641,6 +641,462 @@ details.tech pre {
   white-space: pre-wrap;
   color: #8a93a8;
 }
+
+/* ========== SHIV LAB UI v2 ========== */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --bg: #07090f;
+  --bg2: #0c101a;
+  --panel: #101622;
+  --panel2: #141c2c;
+  --border: #1e2a3d;
+  --border2: #2a3a52;
+  --text: #e8eef8;
+  --muted: #8b9bb8;
+  --accent: #5b9fff;
+  --accent2: #3d7eef;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #fb7185;
+  --hl: #fde68a;
+  --glow: rgba(91, 159, 255, 0.18);
+  --mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+  --sans: "IBM Plex Sans", Inter, system-ui, sans-serif;
+  --radius: 12px;
+  --radius-sm: 8px;
+  --shadow: 0 8px 32px rgba(0,0,0,0.35);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--sans);
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(91,159,255,0.09), transparent 55%),
+    radial-gradient(900px 500px at 90% 0%, rgba(167,139,250,0.06), transparent 50%),
+    var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* header */
+header {
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(12, 16, 26, 0.85);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+header h1 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  background: linear-gradient(90deg, #e8eef8, #8bb6ff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+header .tag {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: rgba(91,159,255,0.12);
+  color: var(--accent);
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-family: var(--mono);
+  border: 1px solid rgba(91,159,255,0.2);
+  letter-spacing: 0.02em;
+}
+
+/* app nav */
+.app-nav {
+  display: flex;
+  gap: 6px;
+  padding: 12px 22px 0;
+  background: transparent;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 56px;
+  z-index: 30;
+  backdrop-filter: blur(10px);
+  background: rgba(7, 9, 15, 0.75);
+}
+.app-tab {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .15s, background .15s, border-color .15s;
+}
+.app-tab:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.app-tab.active {
+  color: var(--text);
+  background: var(--panel);
+  border-color: var(--border);
+  box-shadow: 0 -1px 0 var(--accent) inset;
+  color: var(--accent);
+}
+
+main {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px 22px 72px;
+  display: grid;
+  gap: 16px;
+}
+
+/* panels */
+.panel, .paste-panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+.panel-h {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+}
+.panel-h h2 {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+/* drop zone */
+.drop {
+  border: 1px dashed var(--border2);
+  border-radius: var(--radius);
+  padding: 40px 24px;
+  text-align: center;
+  background:
+    linear-gradient(180deg, rgba(91,159,255,0.04), transparent 60%),
+    var(--panel);
+  transition: border-color .2s, box-shadow .2s, transform .15s;
+  cursor: pointer;
+}
+.drop:hover, .drop.over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow), var(--shadow);
+}
+.drop p { color: var(--muted); font-size: 0.92rem; }
+.drop strong { color: var(--text); font-weight: 600; }
+.drop input { display: none; }
+
+/* buttons */
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+button, .btn {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform .1s, background .12s, border-color .12s, box-shadow .12s;
+}
+button:hover, .btn:hover {
+  background: #1a2438;
+  border-color: var(--border2);
+  transform: translateY(-1px);
+}
+button:active { transform: translateY(0); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+button.primary {
+  background: linear-gradient(180deg, #6aa8ff, var(--accent2));
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(61,126,239,0.35);
+}
+button.primary:hover { filter: brightness(1.08); }
+button.vm {
+  background: linear-gradient(180deg, #f0b35a, #d4892f);
+  border-color: transparent;
+  color: #1a1000;
+}
+button.chain {
+  background: linear-gradient(180deg, #b07ce8, #8b5cf6);
+  border-color: transparent;
+  color: #fff;
+}
+button.wad {
+  background: linear-gradient(180deg, #8b7cf7, #6c5ce7);
+  border-color: transparent;
+  color: #fff;
+}
+button.patch {
+  background: linear-gradient(180deg, #f08a6e, #e17055);
+  border-color: transparent;
+  color: #fff;
+}
+button.report {
+  background: linear-gradient(180deg, #7289da, #5865f2);
+  border-color: transparent;
+  color: #fff;
+}
+button.copy {
+  background: #182033;
+  border-color: var(--border2);
+}
+
+/* progress */
+.progress {
+  height: 4px;
+  background: var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress #bar, #bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), #a78bfa, var(--accent));
+  background-size: 200% 100%;
+  border-radius: 999px;
+  transition: width .25s ease;
+}
+
+/* log */
+.log {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  background: #0a0e16;
+}
+.log .ok { color: var(--good); }
+.log .err { color: var(--bad); }
+.log .info { color: var(--accent); }
+.log .troll { color: var(--bad); font-weight: 700; }
+
+/* strings */
+.out, #out, #keysView {
+  max-height: 52vh;
+  overflow-y: auto;
+  padding: 8px;
+  background: #0a0e16;
+}
+.str {
+  display: grid;
+  grid-template-columns: 48px 1fr auto;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  margin-bottom: 4px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  transition: background .12s, border-color .12s;
+}
+.str:hover {
+  background: rgba(91,159,255,0.06);
+  border-color: var(--border);
+}
+.str.juicy {
+  background: rgba(253, 230, 138, 0.06);
+  border-color: rgba(253, 230, 138, 0.18);
+}
+.str .idx { color: var(--muted); font-weight: 600; }
+.str .val { color: var(--text); word-break: break-all; }
+.str .meta { color: var(--muted); font-size: 0.68rem; white-space: nowrap; }
+
+/* filters */
+.filters {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+}
+.filters input[type="search"] {
+  width: 100%;
+  background: #0a0e16;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  outline: none;
+}
+.filters input[type="search"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
+/* tabs under results */
+.tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2);
+  overflow-x: auto;
+}
+.tab {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+/* textareas */
+textarea, .paste-panel textarea, .encrypt-grid textarea, .console-layout textarea {
+  width: 100%;
+  background: #0a0e16 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+  color: var(--text) !important;
+  font-family: var(--mono) !important;
+  font-size: 0.78rem !important;
+  padding: 12px 14px !important;
+  line-height: 1.45;
+  outline: none;
+  resize: vertical;
+}
+textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px var(--glow);
+}
+
+.proxy-row {
+  background: var(--panel2);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 14px;
+  gap: 10px;
+}
+.proxy-row input[type="text"] {
+  background: #0a0e16;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+}
+
+.console-out {
+  background: #070b12 !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+}
+
+.troll-banner {
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(251,113,133,0.45);
+  background: linear-gradient(90deg, rgba(251,113,133,0.15), rgba(251,113,133,0.04));
+}
+
+.method-chip {
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #0a0e16;
+  font-size: 0.65rem;
+  padding: 3px 9px;
+}
+.method-chip.on {
+  color: var(--good);
+  border-color: rgba(52,211,153,0.35);
+  background: rgba(52,211,153,0.08);
+}
+
+.faq details {
+  border-top: 1px solid var(--border);
+  padding: 12px 16px;
+}
+.faq details summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+.faq details summary:hover { color: var(--accent); }
+
+.stats {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  gap: 12px;
+}
+.stats span b { color: var(--text); font-weight: 600; }
+
+.theme-dot {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.15);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.4);
+}
+.theme-dot.active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.empty {
+  padding: 28px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border2);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background: #3a4d6a; background-clip: padding-box; }
+
+/* selection */
+::selection {
+  background: rgba(91,159,255,0.35);
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  header { padding: 12px 14px; }
+  main { padding: 12px 14px 48px; }
+  .str { grid-template-columns: 36px 1fr; }
+  .str .meta { grid-column: 2; }
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -658,7 +1114,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
 <body>
 <header>
   <h1>Shiv Lua Lab</h1>
-  <span class="tag">static · C / P / shuffle · URL · auto-chain</span>
+  <span class="tag">deobf · encrypt · console</span>
   <span class="tag">fengari offline</span>
   <span class="tag" id="verTag">ready</span><span class="badge-obf" id="obfBadge"></span>
   <span class="troll-badge" id="trollBadge">TROLL SCRIPT DETECTED</span>
@@ -1389,6 +1845,22 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       }
       const line = parts.join("\t");
       // intercept control tags
+      if (line.indexOf("__CAP_DYNAMIC_LOADSTRING__") === 0) {
+        const head = line.slice(26);
+        log("[DYNAMIC LOADSTRING] " + head, "ok");
+        capture(head, "dyn-load-head");
+        return 0;
+      }
+      if (line.indexOf("__CAP_CONCAT_HEAD__") === 0) {
+        const head = line.slice(18);
+        log("[CONCAT] " + head.slice(0, 100), "info");
+        capture(head, "concat-head");
+        return 0;
+      }
+      if (line.indexOf("__CAP_DYNAMIC_EXEC__") === 0) {
+        log(line.slice(2), "info");
+        return 0;
+      }
       if (line.indexOf("__CAP_LOADSTRING__") === 0) {
         let payload = stripBomAndNoise(line.slice(18));
         if (payload && payload.length >= 8) {
@@ -1995,22 +2467,28 @@ end
 
 loadstring = function(code, chunkname)
   if type(code) ~= "string" then
-    return nil, "loadstring expects string"
+    -- try tostring for numbers; tables get a clear error
+    if type(code) == "number" then code = tostring(code)
+    else
+      print("__CAP_LOADSTRING_BADTYPE__" .. type(code))
+      return nil, "loadstring expects string, got " .. type(code)
+    end
   end
   code = __strip_bom(code)
-  if #code >= 8 then
-    -- emit full payload for the auto-chain (not truncated)
+  if #code >= 1 then
+    print("__CAP_DYNAMIC_LOADSTRING__" .. string.sub(code, 1, 100))
     print("__CAP_LOADSTRING__" .. code)
   end
   local fn, err = __real_load(code, chunkname or "@stage")
   if not fn then
-    -- return a stub so callers doing loadstring(...)() don't hard-crash
+    print("__VM_ERROR__loadstring compile: " .. tostring(err))
     return function(...)
       print("__VM_ERROR__loadstring compile: " .. tostring(err))
       return nil
     end, err
   end
   return function(...)
+    print("__CAP_DYNAMIC_EXEC__running chunk len=" .. tostring(#code))
     local results = { pcall(fn, ...) }
     local ok = results[1]
     if not ok then
@@ -4918,6 +5396,225 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     if ($("#conIn")) $("#conIn").value = s;
     conPrint("loaded clean payload (" + s.length + " chars)", "info");
   });
+
+  
+  // ===== ShivLab pack reverse (own encryptor) =====
+  function isShivLabMax(src) {
+    return /ShivLab MAX pack|rollXOR\+RC4\+B64\+C-table|return\(function\(k,seed\)/.test(src || "")
+      && /local C=\{/.test(src || "");
+  }
+  function isShivLabStrong(src) {
+    return /ShivLab strong pack|return\(function\(k\)/.test(src || "") && /b64d\(e\)/.test(src || "");
+  }
+  function isShivLabLight(src) {
+    return /ShivLab light pack/.test(src || "");
+  }
+
+  function rc4cryptBytes(bytes, key) {
+    const S = new Array(256);
+    for (let i = 0; i < 256; i++) S[i] = i;
+    const kb = [];
+    for (let i = 0; i < key.length; i++) kb.push(key.charCodeAt(i) & 0xff);
+    if (!kb.length) kb.push(0x53);
+    let j = 0;
+    for (let i = 0; i < 256; i++) {
+      j = (j + S[i] + kb[i % kb.length]) & 0xff;
+      const t = S[i]; S[i] = S[j]; S[j] = t;
+    }
+    let i = 0; j = 0;
+    const out = new Array(bytes.length);
+    for (let n = 0; n < bytes.length; n++) {
+      i = (i + 1) & 0xff;
+      j = (j + S[i]) & 0xff;
+      const t = S[i]; S[i] = S[j]; S[j] = t;
+      out[n] = (bytes[n] ^ S[(S[i] + S[j]) & 0xff]) & 0xff;
+    }
+    return out;
+  }
+
+  function xorRollingDec(bytes, seed) {
+    // same as enc (xor is symmetric)
+    let s = seed & 0xff;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = (bytes[i] ^ s) & 0xff;
+      s = ((s * 131 + 7) & 0xff);
+    }
+    return out;
+  }
+
+  function extractDecEscapedString(src) {
+    // join all \ddd sequences inside the first big "..." or C={...}
+    const parts = [];
+    const re = /"((?:\\[0-9]{1,3})+)"/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const raw = m[1];
+      let i = 0;
+      let s = "";
+      while (i < raw.length) {
+        if (raw[i] === "\\") {
+          let j = i + 1, d = "";
+          while (j < raw.length && raw[j] >= "0" && raw[j] <= "9" && d.length < 3) d += raw[j++];
+          s += String.fromCharCode(parseInt(d, 10) & 0xff);
+          i = j;
+        } else {
+          s += raw[i++];
+        }
+      }
+      if (s.length) parts.push(s);
+    }
+    return parts.join("");
+  }
+
+  function b64ToBytes(str) {
+    try {
+      const bin = atob(str.replace(/\s+/g, ""));
+      const out = new Array(bin.length);
+      for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i) & 0xff;
+      return out;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function bytesToStr(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i] & 0xff);
+    return s;
+  }
+
+  function reverseShivLabMax(src) {
+    log("ShivLab MAX static reverse…", "info");
+    // key and seed from end: end)('key',seed)
+    let key = "ShivLab";
+    let seed = 0;
+    const km = src.match(/\)\s*\(\s*'((?:\\'|[^'])*)'\s*,\s*(\d+)\s*\)\s*$/);
+    if (km) {
+      key = km[1].replace(/\\'/g, "'");
+      seed = parseInt(km[2], 10) & 0xff;
+      log("key=" + key + " seed=" + seed, "ok");
+    } else {
+      const km2 = src.match(/\)\s*\(\s*"((?:\\"|[^"])*)"\s*,\s*(\d+)\s*\)/);
+      if (km2) {
+        key = km2[1];
+        seed = parseInt(km2[2], 10) & 0xff;
+      } else {
+        log("could not parse key/seed — trying defaults", "err");
+      }
+    }
+    const joined = extractDecEscapedString(src);
+    if (!joined || joined.length < 8) {
+      log("no decimal-escape C payload found", "err");
+      return null;
+    }
+    log("C joined len " + joined.length, "info");
+    const b64bytes = b64ToBytes(joined);
+    if (!b64bytes) {
+      log("base64 decode failed", "err");
+      return null;
+    }
+    // reverse roll xor then rc4
+    const afterXor = xorRollingDec(b64bytes, seed);
+    const plainBytes = rc4cryptBytes(afterXor, key);
+    const plain = bytesToStr(plainBytes);
+    log("MAX reverse → " + plain.length + " chars", "ok");
+    log("preview: " + plain.slice(0, 120).replace(/\n/g, " "), "info");
+    return plain;
+  }
+
+  function reverseShivLabStrong(src) {
+    log("ShivLab Strong static reverse…", "info");
+    let key = "ShivLab";
+    const km = src.match(/\)\s*\(\s*'((?:\\'|[^'])*)'\s*\)\s*$/);
+    if (km) key = km[1].replace(/\\'/g, "'");
+    const joined = extractDecEscapedString(src);
+    if (!joined) return null;
+    const b64bytes = b64ToBytes(joined);
+    if (!b64bytes) return null;
+    const plainBytes = rc4cryptBytes(b64bytes, key);
+    const plain = bytesToStr(plainBytes);
+    log("Strong reverse → " + plain.length + " chars", "ok");
+    return plain;
+  }
+
+  function reverseShivLabLight(src) {
+    const m = src.match(/\[\[([A-Za-z0-9+\/=\s]+)\]\]/);
+    if (!m) return null;
+    try {
+      return decodeURIComponent(escape(atob(m[1].replace(/\s+/g, ""))));
+    } catch (e) {
+      try { return atob(m[1].replace(/\s+/g, "")); } catch (e2) { return null; }
+    }
+  }
+
+  function tryReverseShivLab(src) {
+    if (isShivLabMax(src)) return reverseShivLabMax(src);
+    if (isShivLabStrong(src)) return reverseShivLabStrong(src);
+    if (isShivLabLight(src)) return reverseShivLabLight(src);
+    return null;
+  }
+
+  // Route ShivLab before other static
+  if (typeof routeByObfuscator === "function") {
+    const _r = routeByObfuscator;
+    routeByObfuscator = function(src) {
+      if (isShivLabMax(src) || isShivLabStrong(src) || isShivLabLight(src)) {
+        setObfBadge({ id: "generic", label: "ShivLab Pack", confidence: 1 });
+        const plain = tryReverseShivLab(src);
+        if (plain) {
+          results = [{
+            index: 1,
+            str: plain,
+            score: 9999,
+            method: "shivlab-static",
+            juicy: true,
+            junk: false
+          }];
+          // also harvest strings from plain
+          try {
+            if (typeof runUniversalStatic === "function") {
+              // don't recurse forever — just set clean
+            }
+          } catch (e) {}
+          setCleanSource(plain);
+          window.__LAST_PAYLOAD = plain;
+          lastCleanSource = plain;
+          setStats({ Dec: 1, J: 1, C: 1, Sh: "shivlab", P: "—" });
+          render();
+          log("ShivLab pack cracked statically", "ok");
+          if ($("#btnExport")) $("#btnExport").disabled = false;
+          if ($("#btnExportJson")) $("#btnExportJson").disabled = false;
+          if ($("#btnFinal")) $("#btnFinal").disabled = false;
+          if ($("#btnReport")) $("#btnReport").disabled = false;
+          return true;
+        }
+      }
+      return _r(src);
+    };
+  }
+
+  // Also try reverse at start of run()
+  if (typeof run === "function") {
+    const _run2 = run;
+    run = function(src) {
+      const plain = tryReverseShivLab(src);
+      if (plain) {
+        setObfBadge({ id: "generic", label: "ShivLab Pack", confidence: 1 });
+        results = [{ index: 1, str: plain, score: 9999, method: "shivlab-static", juicy: true, junk: false }];
+        setCleanSource(plain);
+        window.__LAST_PAYLOAD = plain;
+        lastCleanSource = plain;
+        setStats({ Dec: 1, J: 1, C: 1, Sh: "shivlab", P: "—" });
+        render();
+        log("ShivLab pack cracked statically", "ok");
+        if ($("#btnExport")) $("#btnExport").disabled = false;
+        if ($("#btnFinal")) $("#btnFinal").disabled = false;
+        return;
+      }
+      return _run2(src);
+    };
+  }
 
   setTimeout(() => {
     const F = getFengari();
