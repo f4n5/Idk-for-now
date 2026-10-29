@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph / MoonSec / WAD Deobfuscator — Shiv</title>
+<title>Shiv Lua Lab — Deobfuscator · Encryptor · Console</title>
 <style>
 :root {
   --bg: #0d0f14;
@@ -328,6 +328,126 @@ button.report:hover { filter: brightness(1.08); }
 .badge-obf.ironbrew { background: #f59e0b; color: #1a1000; }
 .badge-obf.generic { background: #64748b; color: #fff; }
 
+
+/* ---- app tabs ---- */
+.app-nav {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border);
+  background: #0a0c11;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+.app-tab {
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 10px 18px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+  cursor: pointer;
+}
+.app-tab:hover { color: var(--text); background: #12161f; }
+.app-tab.active {
+  color: var(--accent);
+  background: var(--panel);
+  border-color: var(--border);
+  border-bottom-color: var(--panel);
+  margin-bottom: -1px;
+}
+.app-panel { display: none; }
+.app-panel.active { display: block; animation: fadeUp 0.25s ease both; }
+.encrypt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 0;
+}
+@media (max-width: 900px) {
+  .encrypt-grid { grid-template-columns: 1fr; }
+}
+.encrypt-grid textarea {
+  width: 100%;
+  min-height: 280px;
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 12px;
+  resize: vertical;
+  line-height: 1.4;
+}
+.encrypt-opts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.encrypt-opts select, .encrypt-opts input[type="text"] {
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+.console-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px 0;
+}
+@media (max-width: 900px) {
+  .console-layout { grid-template-columns: 1fr; }
+}
+.console-layout textarea {
+  width: 100%;
+  min-height: 220px;
+  background: #0f1219;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 12px;
+  resize: vertical;
+}
+.console-out {
+  min-height: 220px;
+  max-height: 50vh;
+  overflow: auto;
+  background: #0a0e14;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  color: var(--muted);
+}
+.console-out .line-ok { color: var(--good); }
+.console-out .line-err { color: var(--bad); }
+.console-out .line-print { color: var(--text); }
+.console-out .line-info { color: var(--accent); }
+.console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -537,13 +657,20 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
 </head>
 <body>
 <header>
-  <h1>Luraph V14+ String Deobfuscator</h1>
+  <h1>Shiv Lua Lab</h1>
   <span class="tag">static · C / P / shuffle · URL · auto-chain</span>
   <span class="tag">fengari offline</span>
   <span class="tag" id="verTag">ready</span><span class="badge-obf" id="obfBadge"></span>
   <span class="troll-badge" id="trollBadge">TROLL SCRIPT DETECTED</span>
 </header>
+<nav class="app-nav" id="appNav">
+  <button type="button" class="app-tab active" data-app="deobf">Deobfuscator</button>
+  <button type="button" class="app-tab" data-app="encrypt">Encryptor</button>
+  <button type="button" class="app-tab" data-app="console">Console</button>
+</nav>
 <main>
+<div class="app-panel active" id="panelDeobf" data-app="deobf">
+
   <div class="drop" id="dropZone">
     <p><strong>Drop</strong> a .lua / .txt Luraph file here, or <strong>click</strong> to pick</p>
     <p style="margin-top:8px;font-size:0.8rem">linear scanner · shuffle · P-table · multi-path decrypt · offline VM</p>
@@ -708,6 +835,75 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
 
 
   </div>
+
+
+</div><!-- /panelDeobf -->
+
+<div class="app-panel" id="panelEncrypt" data-app="encrypt">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Encryptor — best-effort strong pack</h2>
+      <span class="tag">not Luraph commercial · local only</span>
+    </div>
+    <div style="padding:12px 14px">
+      <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px">
+        Pastes your Lua → multi-layer pack: payload → RC4 → Base64 → decimal-escape string table → VM-ish loader with shuffle + rolling XOR. Harder than plain base64 loadstring, still client-side reversible if someone uses this same lab.
+      </p>
+      <div class="encrypt-opts">
+        <label>profile
+          <select id="encProfile">
+            <option value="max">MAX (RC4 + XOR + shuffle + escapes)</option>
+            <option value="strong">Strong (RC4 + Base64 loader)</option>
+            <option value="light">Light (Base64 loadstring)</option>
+          </select>
+        </label>
+        <label>key <input type="text" id="encKey" value="ShivLab" placeholder="rc4 key"></label>
+        <button class="primary" id="btnEncrypt">Encrypt</button>
+        <button class="copy" id="btnEncCopy">Copy Output</button>
+        <button id="btnEncDownload">Download .lua</button>
+        <button id="btnEncToDeobf" title="Send output to deobfuscator paste">→ Deobfuscator</button>
+      </div>
+      <div class="encrypt-grid">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">SOURCE</h2>
+          <textarea id="encIn" placeholder="-- paste plain Lua here&#10;print('hello')"></textarea>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">ENCRYPTED OUTPUT</h2>
+          <textarea id="encOut" placeholder="encrypted loader appears here" readonly></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="app-panel" id="panelConsole" data-app="console">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Lua Console — offline Fengari sandbox</h2>
+      <span class="tag">mocks · loadstring · no real HTTP</span>
+    </div>
+    <div style="padding:12px 14px">
+      <div class="console-toolbar">
+        <button class="primary" id="btnConRun">Run</button>
+        <button class="vm" id="btnConClear">Clear Output</button>
+        <button id="btnConSample">Sample</button>
+        <button id="btnConFromClean" title="Load last clean payload">Load Clean Payload</button>
+        <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="conMocks" checked> Roblox/exploit mocks</label>
+      </div>
+      <div class="console-layout">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">CODE</h2>
+          <textarea id="conIn" placeholder="print('hi')&#10;loadstring('print(1+1)')()&#10;"></textarea>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">OUTPUT</h2>
+          <div class="console-out" id="conOut"><div class="line-info">ready — fengari sandbox</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 </main>
 
@@ -4330,6 +4526,239 @@ print("__VM_FINISHED__")
     }
     return s;
   };
+
+  
+  // ===== App tabs =====
+  function switchApp(name) {
+    document.querySelectorAll("#appNav .app-tab").forEach((t) => {
+      t.classList.toggle("active", t.getAttribute("data-app") === name);
+    });
+    document.querySelectorAll(".app-panel").forEach((p) => {
+      p.classList.toggle("active", p.getAttribute("data-app") === name);
+    });
+  }
+  document.querySelectorAll("#appNav .app-tab").forEach((t) => {
+    t.addEventListener("click", () => switchApp(t.getAttribute("data-app")));
+  });
+
+  // ===== Encryptor =====
+  function bytesToDecEscapes(str) {
+    let out = '"';
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i) & 0xff;
+      out += "\\" + String(c).padStart(3, "0");
+    }
+    return out + '"';
+  }
+
+  function rc4crypt(str, key) {
+    const S = new Array(256);
+    for (let i = 0; i < 256; i++) S[i] = i;
+    const kb = [];
+    for (let i = 0; i < key.length; i++) kb.push(key.charCodeAt(i) & 0xff);
+    if (!kb.length) kb.push(0x53);
+    let j = 0;
+    for (let i = 0; i < 256; i++) {
+      j = (j + S[i] + kb[i % kb.length]) & 0xff;
+      const t = S[i]; S[i] = S[j]; S[j] = t;
+    }
+    let i = 0; j = 0;
+    const out = [];
+    for (let n = 0; n < str.length; n++) {
+      i = (i + 1) & 0xff;
+      j = (j + S[i]) & 0xff;
+      const t = S[i]; S[i] = S[j]; S[j] = t;
+      out.push((str.charCodeAt(n) ^ S[(S[i] + S[j]) & 0xff]) & 0xff);
+    }
+    return out;
+  }
+
+  function b64encodeBytes(bytes) {
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let out = "";
+    for (let i = 0; i < bytes.length; i += 3) {
+      const a = bytes[i], b = i + 1 < bytes.length ? bytes[i + 1] : 0, c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+      out += alphabet[a >> 2];
+      out += alphabet[((a & 3) << 4) | (b >> 4)];
+      out += i + 1 < bytes.length ? alphabet[((b & 15) << 2) | (c >> 6)] : "=";
+      out += i + 2 < bytes.length ? alphabet[c & 63] : "=";
+    }
+    return out;
+  }
+
+  function xorRollingEnc(bytes, seed) {
+    let s = seed & 0xff;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      out[i] = (bytes[i] ^ s) & 0xff;
+      s = ((s * 131 + 7) & 0xff);
+    }
+    return out;
+  }
+
+  function buildEncryptedLoader(source, profile, key) {
+    profile = profile || "max";
+    key = key || "ShivLab";
+    const src = String(source || "");
+    if (profile === "light") {
+      const b64 = btoa(unescape(encodeURIComponent(src)));
+      return "-- ShivLab light pack\nreturn loadstring((function()\nlocal b=[["+b64+"]]\nlocal a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'\nlocal f={}\nfor i=1,#a do f[a:sub(i,i)]=i-1 end\nlocal o={}\nlocal n=0 v=0\nfor i=1,#b do\nlocal c=b:sub(i,i)\nif c~='=' then\nv=v*64+f[c] n=n+1\nif n==4 then\no[#o+1]=string.char(math.floor(v/65536)%256,math.floor(v/256)%256,v%256)\nv=0 n=0 end end end\nreturn table.concat(o)\nend)())()";
+    }
+    // RC4 then base64
+    const rc = rc4crypt(src, key);
+    if (profile === "strong") {
+      const b64 = b64encodeBytes(rc);
+      const esc = bytesToDecEscapes(b64);
+      return (
+        "-- ShivLab strong pack (RC4+B64)\n" +
+        "return(function(k)\n" +
+        "local e=" + esc + "\n" +
+        "local function b64d(d) local a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/' local f={} for i=1,#a do f[a:sub(i,i)]=i-1 end local o={} local n=0 v=0 for i=1,#d do local c=d:sub(i,i) if c~='=' then v=v*64+f[c] n=n+1 if n==4 then o[#o+1]=string.char(math.floor(v/65536)%256) o[#o+1]=string.char(math.floor(v/256)%256) o[#o+1]=string.char(v%256) v=0 n=0 end end end return table.concat(o) end\n" +
+        "local raw=b64d(e)\n" +
+        "local S={} for i=0,255 do S[i]=i end local j=0 for i=0,255 do j=(j+S[i]+k:byte((i%#k)+1))%256 S[i],S[j]=S[j],S[i] end\n" +
+        "local i=0 j=0 local o={} for n=1,#raw do i=(i+1)%256 j=(j+S[i])%256 S[i],S[j]=S[j],S[i] o[n]=string.char(bit32 and bit32.bxor(raw:byte(n),(S[(S[i]+S[j])%256])) or (function(a,b) local r=0 p=1 for _=0,7 do local x=a%2 y=b%2 if x~=y then r=r+p end a=(a-x)/2 b=(b-y)/2 p=p*2 end return r end)(raw:byte(n),S[(S[i]+S[j])%256])) end\n" +
+        "local code=table.concat(o)\n" +
+        "return loadstring(code)()\n" +
+        "end)('" + key.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "')"
+      );
+    }
+    // MAX: rolling xor + rc4 + b64 + decimal escapes + tiny shuffle decoy
+    const seed = (key.charCodeAt(0) * 17 + src.length) & 0xff;
+    const xored = xorRollingEnc(rc, seed);
+    const b64 = b64encodeBytes(xored);
+    // chunk into fake C table of 48-char pieces
+    const chunks = [];
+    for (let i = 0; i < b64.length; i += 48) chunks.push(b64.substr(i, 48));
+    if (!chunks.length) chunks.push("");
+    const C = chunks.map((c) => bytesToDecEscapes(c)).join(",");
+    return (
+      "-- ShivLab MAX pack (rollXOR+RC4+B64+C-table)\n" +
+      "return(function(k,seed)\n" +
+      "local C={" + C + "}\n" +
+      "local e=table.concat(C)\n" +
+      "local function b64d(d) local a='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/' local f={} for i=1,#a do f[a:sub(i,i)]=i-1 end local o={} local n=0 v=0 for i=1,#d do local c=d:sub(i,i) if c~='=' then v=v*64+f[c] n=n+1 if n==4 then o[#o+1]=string.char(math.floor(v/65536)%256) o[#o+1]=string.char(math.floor(v/256)%256) o[#o+1]=string.char(v%256) v=0 n=0 end end end return table.concat(o) end\n" +
+      "local raw=b64d(e)\n" +
+      "local s=seed%256 local x={} for i=1,#raw do local b=raw:byte(i) x[i]=string.char((function(a,b) local r=0 p=1 for _=0,7 do local u=a%2 w=b%2 if u~=w then r=r+p end a=(a-u)/2 b=(b-w)/2 p=p*2 end return r end)(b,s)) s=(s*131+7)%256 end\n" +
+      "raw=table.concat(x)\n" +
+      "local S={} for i=0,255 do S[i]=i end local j=0 for i=0,255 do j=(j+S[i]+k:byte((i%#k)+1))%256 S[i],S[j]=S[j],S[i] end\n" +
+      "local i=0 j=0 local o={} for n=1,#raw do i=(i+1)%256 j=(j+S[i])%256 S[i],S[j]=S[j],S[i] local kb=S[(S[i]+S[j])%256] o[n]=string.char((function(a,b) local r=0 p=1 for _=0,7 do local u=a%2 w=b%2 if u~=w then r=r+p end a=(a-u)/2 b=(b-w)/2 p=p*2 end return r end)(raw:byte(n),kb)) end\n" +
+      "return loadstring(table.concat(o))()\n" +
+      "end)('" + key.replace(/\\/g, "\\\\").replace(/'/g, "\\'") + "'," + seed + ")"
+    );
+  }
+
+  function doEncrypt() {
+    const src = ($("#encIn") && $("#encIn").value) || "";
+    if (!src.trim()) { log("encrypt: empty source", "err"); return; }
+    const profile = ($("#encProfile") && $("#encProfile").value) || "max";
+    const key = ($("#encKey") && $("#encKey").value) || "ShivLab";
+    const out = buildEncryptedLoader(src, profile, key);
+    if ($("#encOut")) $("#encOut").value = out;
+    log("encrypted " + src.length + " → " + out.length + " chars (" + profile + ")", "ok");
+  }
+
+  if ($("#btnEncrypt")) $("#btnEncrypt").addEventListener("click", doEncrypt);
+  if ($("#btnEncCopy")) $("#btnEncCopy").addEventListener("click", () => {
+    const v = ($("#encOut") && $("#encOut").value) || "";
+    copyText(v).then(() => log("encrypted output copied", "ok"));
+  });
+  if ($("#btnEncDownload")) $("#btnEncDownload").addEventListener("click", () => {
+    const v = ($("#encOut") && $("#encOut").value) || "";
+    if (!v) return;
+    download("shivlab_encrypted.lua", v, "text/plain");
+  });
+  if ($("#btnEncToDeobf")) $("#btnEncToDeobf").addEventListener("click", () => {
+    const v = ($("#encOut") && $("#encOut").value) || "";
+    if (!v) return;
+    if ($("#pasteBox")) $("#pasteBox").value = v;
+    sourceText = v;
+    fileName = "encrypted_pack.lua";
+    switchApp("deobf");
+    log("sent pack to deobfuscator paste", "ok");
+  });
+
+  // ===== Console sandbox =====
+  function conPrint(msg, cls) {
+    const el = $("#conOut");
+    if (!el) return;
+    const d = document.createElement("div");
+    d.className = "line-" + (cls || "print");
+    d.textContent = String(msg);
+    el.appendChild(d);
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function runConsole() {
+    const code = ($("#conIn") && $("#conIn").value) || "";
+    if (!code.trim()) return;
+    const useMocks = !$("#conMocks") || $("#conMocks").checked;
+    conPrint(">>> run " + code.length + " chars", "info");
+    const F = typeof getFengari === "function" ? getFengari() : (window.fengari || null);
+    if (!F) {
+      conPrint("fengari not loaded", "err");
+      return;
+    }
+    try {
+      const lua = F.lua;
+      const lauxlib = F.lauxlib;
+      const to_luastring = F.to_luastring;
+      const to_jsstring = F.to_jsstring;
+      const L = lauxlib.luaL_newstate();
+      lauxlib.luaL_openlibs(L);
+      // print redirect
+      lua.lua_pushjsfunction(L, function (LL) {
+        const n = lua.lua_gettop(LL);
+        const parts = [];
+        for (let i = 1; i <= n; i++) {
+          if (lua.lua_type(LL, i) === lua.LUA_TSTRING) {
+            parts.push(to_jsstring(lua.lua_tolstring(LL, i)));
+          } else if (lua.lua_type(LL, i) === lua.LUA_TNUMBER) {
+            parts.push(String(lua.lua_tonumber(LL, i)));
+          } else if (lua.lua_type(LL, i) === lua.LUA_TBOOLEAN) {
+            parts.push(lua.lua_toboolean(LL, i) ? "true" : "false");
+          } else {
+            parts.push(to_jsstring(lua.luaL_tolstring(LL, i)));
+            lua.lua_pop(LL, 1);
+          }
+        }
+        conPrint(parts.join("\t"), "print");
+        return 0;
+      });
+      lua.lua_setglobal(L, to_luastring("print"));
+      let boot = "";
+      if (useMocks) {
+        boot = (window.__MOCK_BOOT || "") + "\n" +
+          "game=game or {}; setmetatable(game,{__index=function() return setmetatable({},{__index=function() return function() end end, __call=function() return {} end}) end})\n" +
+          "workspace=workspace or game; script=script or {}; Instance={new=function() return {} end}\n" +
+          "getgenv=getgenv or function() return _G end; identifyexecutor=identifyexecutor or function() return 'ShivLab', '1.0' end\n" +
+          "loadstring=loadstring or load\n";
+      }
+      const full = boot + "\n" + code;
+      const status = lauxlib.luaL_dostring(L, to_luastring(full));
+      if (status !== 0) {
+        const err = to_jsstring(lua.lua_tostring(L, -1));
+        conPrint(err, "err");
+      } else {
+        conPrint("ok", "ok");
+      }
+    } catch (e) {
+      conPrint(String(e && e.message ? e.message : e), "err");
+    }
+  }
+
+  if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
+  if ($("#btnConClear")) $("#btnConClear").addEventListener("click", () => {
+    if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleared</div>';
+  });
+  if ($("#btnConSample")) $("#btnConSample").addEventListener("click", () => {
+    if ($("#conIn")) $("#conIn").value = "print('ShivLab console')\nprint(1+2*3)\nloadstring(\"print('nested loadstring')\")()\nprint(identifyexecutor and identifyexecutor() or 'no executor')\n";
+  });
+  if ($("#btnConFromClean")) $("#btnConFromClean").addEventListener("click", () => {
+    const s = lastCleanSource || window.__LAST_PAYLOAD || "";
+    if (!s) { conPrint("no clean payload yet — run deobf chain first", "err"); return; }
+    if ($("#conIn")) $("#conIn").value = s;
+    conPrint("loaded clean payload (" + s.length + " chars)", "info");
+  });
 
   setTimeout(() => {
     const F = getFengari();
