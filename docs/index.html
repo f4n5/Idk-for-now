@@ -887,6 +887,7 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <div class="console-toolbar">
         <button class="primary" id="btnConRun">Run</button>
         <button class="vm" id="btnConClear">Clear Output</button>
+        <button id="btnConClean">Clean</button>
         <button id="btnConSample">Sample</button>
         <button id="btnConFromClean" title="Load last clean payload">Load Clean Payload</button>
         <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="conMocks" checked> Roblox/exploit mocks</label>
@@ -4693,50 +4694,85 @@ print("__VM_FINISHED__")
     if (!code.trim()) return;
     const useMocks = !$("#conMocks") || $("#conMocks").checked;
     conPrint(">>> run " + code.length + " chars", "info");
-    const F = typeof getFengari === "function" ? getFengari() : (window.fengari || null);
-    if (!F) {
-      conPrint("fengari not loaded", "err");
-      return;
-    }
+    let session = null;
     try {
-      const lua = F.lua;
-      const lauxlib = F.lauxlib;
-      const to_luastring = F.to_luastring;
-      const to_jsstring = F.to_jsstring;
+      if (typeof createVMSession === "function") session = createVMSession();
+    } catch (e) {}
+    if (!session) {
+      const F = typeof getFengari === "function" ? getFengari() : (window.fengari || null);
+      if (!F) { conPrint("fengari not loaded", "err"); return; }
+      const { lua, lauxlib, lualib, to_luastring, to_jsstring } = F;
+      if (!lualib || typeof lualib.luaL_openlibs !== "function") {
+        conPrint("fengari lualib.luaL_openlibs missing", "err");
+        return;
+      }
       const L = lauxlib.luaL_newstate();
-      lauxlib.luaL_openlibs(L);
+      lualib.luaL_openlibs(L);
+      session = { lua, lauxlib, lualib, to_luastring, to_jsstring, L };
+    }
+    const { lua, lauxlib, to_luastring, to_jsstring, L } = session;
+    try {
       // print redirect
-      lua.lua_pushjsfunction(L, function (LL) {
-        const n = lua.lua_gettop(LL);
-        const parts = [];
-        for (let i = 1; i <= n; i++) {
-          if (lua.lua_type(LL, i) === lua.LUA_TSTRING) {
-            parts.push(to_jsstring(lua.lua_tolstring(LL, i)));
-          } else if (lua.lua_type(LL, i) === lua.LUA_TNUMBER) {
-            parts.push(String(lua.lua_tonumber(LL, i)));
-          } else if (lua.lua_type(LL, i) === lua.LUA_TBOOLEAN) {
-            parts.push(lua.lua_toboolean(LL, i) ? "true" : "false");
-          } else {
-            parts.push(to_jsstring(lua.luaL_tolstring(LL, i)));
-            lua.lua_pop(LL, 1);
+      if (typeof lua.lua_pushjsfunction === "function") {
+        lua.lua_pushjsfunction(L, function (LL) {
+          const n = lua.lua_gettop(LL);
+          const parts = [];
+          for (let i = 1; i <= n; i++) {
+            try {
+              const t = lua.lua_type(LL, i);
+              if (t === lua.LUA_TSTRING) {
+                const ls = lua.lua_tolstring(LL, i);
+                parts.push(ls ? to_jsstring(ls) : "");
+              } else if (t === lua.LUA_TNUMBER) {
+                parts.push(String(lua.lua_tonumber(LL, i)));
+              } else if (t === lua.LUA_TBOOLEAN) {
+                parts.push(lua.lua_toboolean(LL, i) ? "true" : "false");
+              } else if (t === lua.LUA_TNIL) {
+                parts.push("nil");
+              } else {
+                // tostring via luaL_tolstring if available
+                if (lauxlib.luaL_tolstring) {
+                  lauxlib.luaL_tolstring(LL, i);
+                  parts.push(to_jsstring(lua.lua_tolstring(LL, -1)) || "?");
+                  lua.lua_pop(LL, 1);
+                } else {
+                  parts.push(typeof t === "number" ? ("type" + t) : "?");
+                }
+              }
+            } catch (e) {
+              parts.push("?");
+            }
           }
-        }
-        conPrint(parts.join("\t"), "print");
-        return 0;
-      });
-      lua.lua_setglobal(L, to_luastring("print"));
+          conPrint(parts.join("\t"), "print");
+          return 0;
+        });
+        lua.lua_setglobal(L, to_luastring("print"));
+      }
+      // loadstring alias for 5.1 style
+      try {
+        lua.lua_getglobal(L, to_luastring("load"));
+        lua.lua_setglobal(L, to_luastring("loadstring"));
+      } catch (e) {}
       let boot = "";
       if (useMocks) {
-        boot = (window.__MOCK_BOOT || "") + "\n" +
+        boot =
+          (window.__MOCK_BOOT || "") +
+          "\n" +
           "game=game or {}; setmetatable(game,{__index=function() return setmetatable({},{__index=function() return function() end end, __call=function() return {} end}) end})\n" +
-          "workspace=workspace or game; script=script or {}; Instance={new=function() return {} end}\n" +
-          "getgenv=getgenv or function() return _G end; identifyexecutor=identifyexecutor or function() return 'ShivLab', '1.0' end\n" +
-          "loadstring=loadstring or load\n";
+          "workspace=workspace or game; script=script or {Name='Script'}; Instance={new=function() return setmetatable({},{__index=function() return function() end end}) end}\n" +
+          "getgenv=getgenv or function() return _G end\n" +
+          "identifyexecutor=identifyexecutor or function() return 'ShivLab','1.0' end\n" +
+          "warn=warn or print\n" +
+          "if load and not loadstring then loadstring=load end\n";
       }
       const full = boot + "\n" + code;
       const status = lauxlib.luaL_dostring(L, to_luastring(full));
-      if (status !== 0) {
-        const err = to_jsstring(lua.lua_tostring(L, -1));
+      if (status !== 0 && status !== undefined) {
+        let err = "lua error";
+        try {
+          const es = lua.lua_tostring(L, -1);
+          if (es) err = to_jsstring(es);
+        } catch (e) {}
         conPrint(err, "err");
       } else {
         conPrint("ok", "ok");
@@ -4746,7 +4782,12 @@ print("__VM_FINISHED__")
     }
   }
 
-  if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
+  function cleanConsole() {
+    if ($("#conIn")) $("#conIn").value = "";
+    if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleaned</div>';
+  }
+
+if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   if ($("#btnConClear")) $("#btnConClear").addEventListener("click", () => {
     if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleared</div>';
   });
