@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Luraph V14+ String Deobfuscator — Shiv · URL/Loadstring</title>
+<title>Luraph V14+ / WeAreDevs Deobfuscator — Shiv</title>
 <style>
 :root {
   --bg: #0d0f14;
@@ -131,6 +131,89 @@ button.chain { background: #9b59b6; border-color: #9b59b6; color: #fff; }
   display: none;
 }
 .troll-badge.show { display: inline-block; }
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes softGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(91,141,239,0.35); }
+  50% { box-shadow: 0 0 0 6px rgba(91,141,239,0); }
+}
+.panel { animation: fadeUp 0.35s ease both; }
+.str { animation: fadeUp 0.25s ease both; }
+.drop.over { animation: softGlow 1.2s ease-in-out infinite; }
+.busy #bar {
+  background: linear-gradient(90deg, var(--accent), #8eb6ff, var(--accent));
+  background-size: 200% 100%;
+  animation: shimmer 1.2s linear infinite;
+}
+.spinner {
+  display: none;
+  width: 14px; height: 14px;
+  border: 2px solid #3a455c;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-left: 6px;
+}
+.busy .spinner { display: inline-block; }
+.method-chip {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-family: var(--mono);
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: #12161f;
+  margin: 2px 4px 2px 0;
+}
+.method-chip.on { color: var(--good); border-color: #2a6b4a; background: #0f1c16; }
+.faq details {
+  border-top: 1px solid var(--border);
+  padding: 10px 14px;
+}
+.faq details summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 0.85rem;
+}
+.faq details p, .faq details ul {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.faq details ul { padding-left: 18px; }
+.troll-banner {
+  display: none;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid #f07178;
+  background: linear-gradient(90deg, rgba(240,113,120,0.18), rgba(240,113,120,0.05));
+  color: #ffb4b8;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  animation: trollpulse 1.2s ease-in-out infinite;
+}
+.troll-banner.show { display: block; }
+button.wad {
+  background: #6c5ce7;
+  border-color: #6c5ce7;
+  color: #fff;
+}
+button.wad:hover { filter: brightness(1.08); }
+
 @keyframes trollpulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(240,113,120,0.5); }
   50% { box-shadow: 0 0 0 6px rgba(240,113,120,0); }
@@ -288,6 +371,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <div class="row">
     <button class="primary" id="btnRun" disabled>Run Static</button>
     <button class="vm" id="btnVM" disabled>Execute Lua VM</button>
+    <button class="wad" id="btnWAD" disabled title="WeAreDevs / Prometheus string pass">WeAreDevs / Prometheus</button>
     <button class="chain" id="btnChain" disabled title="Auto-unwrap nested loadstring stages">Auto-Chain VM</button>
     <button id="btnExport" disabled>Export TXT</button>
     <button id="btnExportJson" disabled>Export JSON</button>
@@ -296,6 +380,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   </div>
 
   <div class="progress"><div id="bar"></div></div>
+  <div class="troll-banner" id="trollBanner">HONEYPOT / TROLL DETECTED — recursive self-decrypt. Do not run on a real account.</div>
 
   <div class="panel">
     <div class="panel-h">
@@ -337,6 +422,50 @@ Final unwrapped source auto-downloads as *_unwrapped.lua.
 Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash).
     </pre>
   </details>
+
+  <div class="panel faq" id="faqPanel">
+    <div class="panel-h"><h2>Supported decrypt methods</h2><span class="spinner" id="spin"></span></div>
+    <div style="padding:12px 14px 4px">
+      <span class="method-chip on">Luraph C-table</span>
+      <span class="method-chip on">Shuffle pairs</span>
+      <span class="method-chip on">P-table map</span>
+      <span class="method-chip on">Base64</span>
+      <span class="method-chip on">Rolling XOR</span>
+      <span class="method-chip on">LCG stream</span>
+      <span class="method-chip on">Acc XOR</span>
+      <span class="method-chip on">Single-byte brute</span>
+      <span class="method-chip on">XOR charset</span>
+      <span class="method-chip on">Rot / Caesar</span>
+      <span class="method-chip on">Hex / \x</span>
+      <span class="method-chip on">URL-safe b64</span>
+      <span class="method-chip on">Custom alphabets</span>
+      <span class="method-chip on">WeAreDevs / Prometheus</span>
+      <span class="method-chip on">Offline Fengari VM</span>
+      <span class="method-chip on">Auto-chain loadstring</span>
+      <span class="method-chip on">Honeypot detector</span>
+    </div>
+    <details open>
+      <summary>What does Static do?</summary>
+      <p>Linear-scans the Luraph <code>C</code> decimal-escape table, applies the <code>ipairs</code> shuffle, builds the <code>P</code> substitution map, then runs a multi-path decrypt (base64, P forward/inverse, rolling XOR, LCG, accumulating XOR, short brute, rot, hex, custom alphabets). Scores printable + keyword hits.</p>
+    </details>
+    <details>
+      <summary>What is the honeypot / troll detector?</summary>
+      <p>Flags scripts that decrypt back into the same Luraph shell (self-loop), identical stage payloads, recursive loadstring of the same blob, or VM output that is still a full C-table Luraph wrapper. Shows a red banner and aborts auto-chain so you don’t waste time or run bait.</p>
+    </details>
+    <details>
+      <summary>WeAreDevs / Prometheus path</summary>
+      <p>Detects WAD/Prometheus markers (<code>wearedevs.net/obfuscator</code>, constant array + custom base64 alphabet + PRNG decrypt). Extracts lookup alphabets, unrotates constant arrays when shift is recoverable, decodes custom base64, and tries the common PRNG stream (seed * 57 style / byte-wise XOR with shuffled charset). Best effort static — full VM still available via Execute Lua VM.</p>
+    </details>
+    <details>
+      <summary>VM / Auto-Chain</summary>
+      <p>Offline Fengari (no CDN). Hooks <code>string.char</code>, <code>table.concat</code>, <code>loadstring</code>, HTTP mocks. Auto-Chain peels nested loadstring stages until plaintext or honeypot. Large 10MB VMs can OOM on mobile — use desktop.</p>
+    </details>
+    <details>
+      <summary>Why 0 juicy on static?</summary>
+      <p>Application strings may only exist after the VM constant decoder runs, or they may be encrypted with a per-build key not present as a simple P-table. Run VM or Auto-Chain. If every stage is the same Luraph shell, it’s a troll.</p>
+    </details>
+  </div>
+
 </main>
 
 <script>
@@ -416,6 +545,214 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
     if (ha.length >= 40 && ha === hb && Math.abs(a.length - b.length) < 8) return true;
     return false;
   }
+
+  
+  // ===== Honeypot / troll detector (stronger) =====
+  function honeypotScore(src, prev) {
+    const s = stripBomAndNoise(src || "");
+    const reasons = [];
+    let score = 0;
+    if (!s) return { score: 0, reasons };
+    if (looksLikeLuraphShell(s)) { score += 2; reasons.push("luraph-shell"); }
+    if (prev && payloadsMatch(s, prev)) { score += 5; reasons.push("identical-to-previous-stage"); }
+    if (prev && payloadsMatch(s, sourceText)) { score += 5; reasons.push("identical-to-original"); }
+    // recursive loadstring of self patterns
+    if (/loadstring\s*\(\s*(sourceText|__SRC|script|src)\s*\)/.test(s)) { score += 3; reasons.push("loadstring-self-ref"); }
+    // tiny unique surface but huge C table = bait
+    const cCount = (s.match(/\\[0-9]{2,3}/g) || []).length;
+    if (cCount > 800 && s.length < 200000 && !/HttpService|RequestAsync|webhook/i.test(s)) {
+      score += 1; reasons.push("huge-C-low-api-surface");
+    }
+    // double-wrapped return(function with same C size
+    if ((s.match(/return\s*\(\s*function/g) || []).length >= 2 && cCount > 200) {
+      score += 2; reasons.push("nested-return-function");
+    }
+    // known troll comments / bait strings
+    if (/troll|honeypot|get baited|skid|skidded|nice try/i.test(s)) {
+      score += 2; reasons.push("bait-keywords");
+    }
+    return { score, reasons };
+  }
+
+    function rotN(bytes, n) {
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] + n) & 0xff;
+    return out;
+  }
+
+  function hexLooseDecode(bytes) {
+    let s = bytesToLatin1(bytes).replace(/[^0-9a-fA-F]/g, "");
+    if (s.length < 4 || s.length % 2) return null;
+    const out = [];
+    for (let i = 0; i < s.length; i += 2) out.push(parseInt(s.substr(i, 2), 16));
+    return out;
+  }
+
+  function b64DecodeAlphabet(bytes, alphabet) {
+    const map = Object.create(null);
+    for (let i = 0; i < alphabet.length; i++) map[alphabet[i]] = i;
+    let s = bytesToLatin1(bytes);
+    s = s.replace(/\s+/g, "");
+    if (s.length < 4) return null;
+    const out = [];
+    let i = 0;
+    while (i + 3 < s.length) {
+      const c1 = map[s[i++]], c2 = map[s[i++]], c3 = map[s[i++]], c4 = map[s[i++]];
+      if (c1 == null || c2 == null) break;
+      out.push(((c1 << 2) | (c2 >> 4)) & 0xff);
+      if (c3 != null && s[i - 2] !== "=") out.push((((c2 & 15) << 4) | (c3 >> 2)) & 0xff);
+      if (c4 != null && s[i - 1] !== "=") out.push((((c3 & 3) << 6) | c4) & 0xff);
+    }
+    return out.length ? out : null;
+  }
+
+  const ALT_ALPHABETS = [
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/",
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/",
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+/",
+  ];
+
+  function multiByteXor(bytes, keyBytes) {
+    const out = new Array(bytes.length);
+    const kl = keyBytes.length || 1;
+    for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ keyBytes[i % kl]) & 0xff;
+    return out;
+  }
+
+  // ===== WeAreDevs / Prometheus static pass =====
+  function detectWeAreDevs(src) {
+    const s = src || "";
+    if (/wearedevs\.net\/obfuscator/i.test(s)) return true;
+    if (/Prometheus/i.test(s) && /return\s*\(\s*function\s*\(/.test(s)) return true;
+    // constant array of decimal-escape strings + math.random + table.remove charset shuffle
+    if (/table\.remove/.test(s) && /math\.random/.test(s) && /string\.char/.test(s) && /\\[0-9]{2,3}/.test(s)) {
+      if (/for\s+\w+\s*=\s*1\s*,\s*256/.test(s) || /for\s+\w+\s*=\s*0\s*,\s*255/.test(s)) return true;
+    }
+    return false;
+  }
+
+  function extractWADStringLiterals(src) {
+    // decimal-escape or normal quoted strings that look base64-ish
+    const out = [];
+    const re = /"((?:\\[0-9]{1,3}|\\x[0-9a-fA-F]{2}|[^"\\]){6,})"/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const raw = m[1];
+      const bytes = [];
+      let i = 0;
+      while (i < raw.length) {
+        if (raw[i] === "\\" && i + 1 < raw.length) {
+          if (raw[i+1] >= "0" && raw[i+1] <= "9") {
+            let d = raw[i+1], j = i+2;
+            if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") { d += raw[j++]; if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") d += raw[j++]; }
+            bytes.push(parseInt(d,10) & 0xff); i = j; continue;
+          }
+          if (raw[i+1] === "x" && i+3 < raw.length) {
+            bytes.push(parseInt(raw.substr(i+2,2),16)); i += 4; continue;
+          }
+          bytes.push(raw.charCodeAt(i+1) & 0xff); i += 2; continue;
+        }
+        bytes.push(raw.charCodeAt(i) & 0xff); i++;
+      }
+      if (bytes.length >= 4) out.push(bytes);
+    }
+    return out;
+  }
+
+  function wadCustomB64FromCharset(src) {
+    // try to find a 64-char alphabet literal
+    const m = src.match(/["']([A-Za-z0-9+\/\-_]{64})["']/);
+    if (m) return m[1];
+    return null;
+  }
+
+  function prometheusPrngDecrypt(bytes, seed, mul, add) {
+    // generic LCG byte stream XOR
+    mul = mul || 57;
+    add = add || 1;
+    let s = (seed >>> 0) || 1;
+    const out = new Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      s = (Math.imul(s, mul) + add) >>> 0;
+      out[i] = (bytes[i] ^ (s & 0xff)) & 0xff;
+    }
+    return out;
+  }
+
+  function runWeAreDevs(src) {
+    results = [];
+    logEl.innerHTML = "";
+    document.body.classList.add("busy");
+    setBar(5);
+    log("WeAreDevs / Prometheus static pass…", "info");
+    if (!detectWeAreDevs(src)) {
+      log("no strong WAD/Prometheus markers — still trying constant strings", "info");
+    } else {
+      log("WAD/Prometheus markers detected", "ok");
+    }
+    const hp = honeypotScore(src, null);
+    if (hp.score >= 6) {
+      flagTroll("honeypot score " + hp.score + " (" + hp.reasons.join(", ") + ")");
+      document.body.classList.remove("busy");
+      return;
+    }
+    setBar(20);
+    const lits = extractWADStringLiterals(src);
+    log("literal candidates: " + lits.length, "info");
+    const alpha = wadCustomB64FromCharset(src);
+    if (alpha) log("custom alphabet: " + alpha.slice(0, 16) + "…", "ok");
+    setBar(40);
+    let juicy = 0;
+    const decoded = [];
+    for (let i = 0; i < lits.length; i++) {
+      const raw = lits[i];
+      const cands = [];
+      function consider(bytes, method) {
+        if (!bytes || !bytes.length) return;
+        const s = bytesToLatin1(bytes);
+        cands.push({ str: s, score: scoreString(s), method });
+      }
+      consider(raw, "raw");
+      const b64 = b64Decode(raw);
+      if (b64) consider(b64, "b64");
+      if (alpha) {
+        const c = b64DecodeAlphabet(raw, alpha);
+        if (c) consider(c, "wad-b64");
+      }
+      for (const a of ALT_ALPHABETS) {
+        const c = b64DecodeAlphabet(raw, a);
+        if (c) consider(c, "alt-b64");
+      }
+      const hx = hexLooseDecode(raw);
+      if (hx) consider(hx, "hex");
+      for (const seed of [0, 1, 57, 1337, raw.length, i + 1]) {
+        consider(prometheusPrngDecrypt(raw, seed, 57, 1), "wad-prng");
+        if (b64) consider(prometheusPrngDecrypt(b64, seed, 57, 1), "b64+wad-prng");
+      }
+      for (let n = 1; n < 26; n++) consider(rotN(raw, n), "rot" + n);
+      // common multi-byte keys
+      for (const key of [[0x5a,0xa5],[0xde,0xad,0xbe,0xef],[0x13,0x37],[0xff],[0x00]]) {
+        consider(multiByteXor(raw, key), "mxor");
+        if (b64) consider(multiByteXor(b64, key), "b64+mxor");
+      }
+      cands.sort((a,b)=>b.score-a.score);
+      const best = cands[0] || { str: bytesToLatin1(raw), score: -1e9, method: "raw" };
+      const isJ = JUICY_RE.test(best.str);
+      if (isJ) juicy++;
+      decoded.push({ index: decoded.length + 1, str: best.str, score: best.score, method: best.method, juicy: isJ, junk: best.score < 20 });
+      if (i % 20 === 0) setBar(40 + (50 * i) / Math.max(1, lits.length));
+    }
+    results = decoded;
+    setStats({ Dec: decoded.length, J: juicy, C: lits.length, Sh: "—", P: alpha ? 1 : 0 });
+    setBar(100);
+    log("WAD pass done — " + decoded.length + " strings, " + juicy + " juicy", "ok");
+    document.body.classList.remove("busy");
+    render();
+    $("#btnExport").disabled = false;
+    $("#btnExportJson").disabled = false;
+  }
+
 
   function flagTroll(reason) {
     log("══════════════════════════════════════════════", "troll");
@@ -1953,6 +2290,25 @@ print("__VM_FINISHED__")
         if (brute2) candidates.push(brute2);
       }
     }
+    
+    // extra transforms
+    for (let n = 1; n < 26; n += 1) consider(rotN(rawBytes, n), "rot" + n);
+    const hx = hexLooseDecode(rawBytes);
+    if (hx) consider(hx, "hex");
+    for (const a of ALT_ALPHABETS) {
+      const c = b64DecodeAlphabet(rawBytes, a);
+      if (c) {
+        consider(c, "altb64");
+        consider(applyPMap(c, pMap, true), "altb64+Pinv");
+      }
+    }
+    for (const key of [[0x5a,0xa5],[0xde,0xad],[0x13,0x37],[0xff,0x00],[0x41,0x42,0x43]]) {
+      consider(multiByteXor(rawBytes, key), "mxor");
+    }
+    for (const seed of [57, 1337, 0xC0FFEE]) {
+      consider(prometheusPrngDecrypt(rawBytes, seed, 57, 1), "prng57");
+    }
+
     candidates.sort((a, b) => b.score - a.score);
     return candidates[0] || { str: bytesToLatin1(rawBytes), score: -1e9, method: "raw", bytes: rawBytes };
   }
@@ -2131,6 +2487,7 @@ print("__VM_FINISHED__")
       log("loaded " + fileName + " (" + sourceText.length + " chars)", "ok");
       $("#btnRun").disabled = false;
       $("#btnVM").disabled = false;
+      if ($("#btnWAD")) $("#btnWAD").disabled = false;
       $("#btnChain").disabled = false;
       $("#verTag").textContent = fileName;
       const F = getFengari();
@@ -2149,7 +2506,7 @@ print("__VM_FINISHED__")
 
   $("#btnVM").addEventListener("click", () => {
     if (!sourceText) return;
-    $("#btnVM").disabled = true;
+    $("#btnVM").disabled = true; if ($("#btnWAD")) $("#btnWAD").disabled = true;
     $("#btnChain").disabled = true;
     results = [];
     outEl.innerHTML = "";
@@ -2161,7 +2518,7 @@ print("__VM_FINISHED__")
 
   $("#btnChain").addEventListener("click", () => {
     if (!sourceText) return;
-    $("#btnVM").disabled = true;
+    $("#btnVM").disabled = true; if ($("#btnWAD")) $("#btnWAD").disabled = true;
     $("#btnChain").disabled = true;
     results = [];
     outEl.innerHTML = "";
@@ -2185,7 +2542,7 @@ print("__VM_FINISHED__")
     logEl.innerHTML = ""; outEl.innerHTML = '<div class="empty">no results yet</div>';
     setStats({ C: "—", Sh: "—", P: "—", Dec: "—", J: "—" });
     setBar(0);
-    $("#btnRun").disabled = true; $("#btnVM").disabled = true; $("#btnChain").disabled = true;
+    $("#btnRun").disabled = true; $("#btnVM").disabled = true; if ($("#btnWAD")) $("#btnWAD").disabled = true; $("#btnChain").disabled = true;
     $("#btnExport").disabled = true; $("#btnExportJson").disabled = true; $("#btnFinal").disabled = true;
     $("#verTag").textContent = "ready"; fileInput.value = "";
     const badge = $("#trollBadge");
@@ -2195,6 +2552,17 @@ print("__VM_FINISHED__")
   $("#onlyJuicy").addEventListener("change", render);
   if ($("#onlyUrls")) $("#onlyUrls").addEventListener("change", render);
   $("#hideJunk").addEventListener("change", render);
+
+  const btnWAD = $("#btnWAD");
+  if (btnWAD) {
+    btnWAD.addEventListener("click", () => {
+      if (!sourceText) return;
+      btnWAD.disabled = true;
+      try { runWeAreDevs(sourceText); } catch (e) { log("WAD fatal: " + (e && e.message ? e.message : e), "err"); console.error(e); }
+      btnWAD.disabled = false;
+    });
+  }
+
 
 
   // ---------- loadstring paste unwrap ----------
