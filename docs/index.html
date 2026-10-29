@@ -1123,6 +1123,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <button type="button" class="app-tab active" data-app="deobf">Deobfuscator</button>
   <button type="button" class="app-tab" data-app="encrypt">Encryptor</button>
   <button type="button" class="app-tab" data-app="console">Console</button>
+  <button type="button" class="app-tab" data-app="tools">Tools</button>
 </nav>
 <main>
 <div class="app-panel active" id="panelDeobf" data-app="deobf">
@@ -1358,6 +1359,96 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
           <div class="console-out" id="conOut"><div class="line-info">ready — fengari sandbox</div></div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="app-panel" id="panelTools" data-app="tools">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Tools · proxies · converters · snippets</h2>
+      <span class="tag">local utilities</span>
+    </div>
+    <div style="padding:14px 16px;display:grid;gap:16px">
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">CORS PROXY PRESETS</h2>
+        <p style="font-size:0.8rem;color:var(--muted);margin-bottom:8px">Click to fill the Deobfuscator proxy field. Script URL stays separate.</p>
+        <div class="row" id="proxyPresets">
+          <button type="button" data-proxy="https://corsproxy.io/?">corsproxy.io</button>
+          <button type="button" data-proxy="https://api.allorigins.win/raw?url=">allorigins raw</button>
+          <button type="button" data-proxy="https://corsproxy.org/?">corsproxy.org</button>
+          <button type="button" data-proxy="https://thingproxy.freeboard.io/fetch/">thingproxy</button>
+          <button type="button" data-proxy="https://api.codetabs.com/v1/proxy?quest=">codetabs</button>
+          <button type="button" data-proxy="http://localhost:8080/">localhost:8080</button>
+        </div>
+      </div>
+
+      <div class="encrypt-grid">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">BASE64 ENCODE</h2>
+          <textarea id="toolB64In" placeholder="plain text or lua"></textarea>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="primary" id="btnB64Enc">Encode</button>
+            <button type="button" id="btnB64Dec">Decode</button>
+            <button type="button" class="copy" id="btnB64Copy">Copy Out</button>
+          </div>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">OUTPUT</h2>
+          <textarea id="toolB64Out" placeholder="result"></textarea>
+        </div>
+      </div>
+
+      <div class="encrypt-grid">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">HEX / DECIMAL ESCAPES</h2>
+          <textarea id="toolEscIn" placeholder='hello  or  \104\101\108\108\111'></textarea>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="primary" id="btnToDec">→ \ddd escapes</button>
+            <button type="button" id="btnFromDec">← from escapes</button>
+            <button type="button" id="btnToHex">→ \xHH</button>
+            <button type="button" id="btnFromHex">← from hex</button>
+          </div>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">OUTPUT</h2>
+          <textarea id="toolEscOut" placeholder="result"></textarea>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">QUICK SNIPPETS</h2>
+        <div class="row" id="snippetBtns">
+          <button type="button" data-snip="print">print test</button>
+          <button type="button" data-snip="http">HttpGet loadstring</button>
+          <button type="button" data-snip="hook">basic hook check</button>
+          <button type="button" data-snip="id">identifyexecutor</button>
+          <button type="button" data-snip="b64">b64 loadstring</button>
+        </div>
+        <p style="font-size:0.75rem;color:var(--muted);margin-top:6px">sends into Console code box and switches tab.</p>
+      </div>
+
+      <div class="panel" style="box-shadow:none">
+        <div class="panel-h"><h2>Cheatsheet</h2></div>
+        <div style="padding:12px 16px;font-size:0.8rem;color:var(--muted);line-height:1.55">
+          <p><b style="color:var(--text)">Deobf flow:</b> drop/paste → detector badge → Static (or MoonSec/WAD route) → Patch &amp; Run if nil globals → Auto-Chain for nested loadstring → Export Clean.</p>
+          <p style="margin-top:8px"><b style="color:var(--text)">ShivLab MAX:</b> encrypt tab → MAX → → Deobfuscator cracks it statically (key+seed+RC4+rollXOR).</p>
+          <p style="margin-top:8px"><b style="color:var(--text)">Remote scripts:</b> paste URL in fetch field, enable CORS proxy, Fetch → Analyze. VM HttpGet stays stubbed as <code>--http-stub--</code>.</p>
+          <p style="margin-top:8px"><b style="color:var(--text)">Honeypot:</b> red banner + TROLL badge means self-loop — don’t run on a real account.</p>
+          <p style="margin-top:8px"><b style="color:var(--text)">Console:</b> offline Fengari only. No real network. Good for testing recovered plain Lua.</p>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">SESSION</h2>
+        <div class="row">
+          <button type="button" id="btnToolExportState">Export session JSON</button>
+          <button type="button" id="btnToolClearStorage">Clear saved theme</button>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -3998,14 +4089,38 @@ print("__VM_FINISHED__")
     if (b) b.disabled = !lastCleanSource;
   }
 
+  
+  // if chain yields no code but saw HTTP, auto-download stub style clean
+  window.__noteHttpStubClean = function() {
+    if (!lastCleanSource || !String(lastCleanSource).trim()) {
+      setCleanSource("--http-stub--");
+      window.__LAST_PAYLOAD = "--http-stub--";
+    }
+  };
+
   function exportClean() {
-    const s = lastCleanSource || (results.length ? results.map((r) => "-- [" + r.index + "] " + r.str).join("\n") : "");
+    let s = lastCleanSource || window.__LAST_PAYLOAD || "";
+    if (!s && results.length) {
+      // prefer non-junk codey strings; if only http urls, emit stub file
+      const codey = results.filter((r) => !r.junk && /function|local |return |loadstring/.test(r.str));
+      if (codey.length) s = codey.map((r) => r.str).join("\n\n");
+      else {
+        const urls = results.filter((r) => /https?:\/\//i.test(r.str));
+        if (urls.length && !codey.length) {
+          s = "--http-stub--\n-- unwrapped remote reference(s):\n" + urls.map((r) => "-- " + r.str).join("\n");
+        } else {
+          s = results.map((r) => "-- [" + r.index + "] " + r.str).join("\n");
+        }
+      }
+    }
     if (!s) { log("no clean source yet — run Auto-Chain or VM first", "err"); return; }
+    // normalize any leftover verbose stubs
+    s = String(s).replace(/--\s*http stub[\s\S]*$/gim, "--http-stub--");
+    if (/^\s*$/.test(s)) s = "--http-stub--";
     download((fileName || "payload").replace(/\.\w+$/, "") + "_clean.lua", s, "text/plain");
     log("exported clean .lua (" + s.length + " chars)", "ok");
   }
 
-  // ===== Discord webhook sandbox (harmless troll) =====
   function extractWebhooks(text) {
     const re = /https:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]+/g;
     const set = new Set();
@@ -4084,14 +4199,14 @@ print("__VM_FINISHED__")
       "  s.PostAsync = function(_, url, body) print('__CAP_HTTP__'..tostring(url)) return '' end",
       "  s.RequestAsync = function(_, opts)",
       "    if type(opts)=='table' and opts.Url then print('__CAP_HTTP__'..tostring(opts.Url)) end",
-      "    return {Success=true, Body='', StatusCode=200}",
+      "    return {Success=true, Body='--http-stub--', StatusCode=200}",
       "  end",
       "  return s",
       "end",
       "syn = syn or {}",
       "syn.request = syn.request or function(opts)",
       "  if type(opts)=='table' and opts.Url then print('__CAP_HTTP__'..tostring(opts.Url)) end",
-      "  return {Success=true, Body='', StatusCode=200}",
+      "  return {Success=true, Body='--http-stub--', StatusCode=200}",
       "end",
       "http = http or syn",
       "request = request or syn.request",
@@ -5269,7 +5384,7 @@ print("__VM_FINISHED__")
 -- ShivLab console mocks
 local function __str_stub(url)
   print("[mock HttpGet] " .. tostring(url))
-  return "-- http stub from console\\nreturn function() print('[stub] remote script body') end"
+  return "--http-stub--"
 end
 local function __callable()
   return setmetatable({}, {
@@ -5284,7 +5399,7 @@ local function __callable()
       if k == "RequestAsync" or k == "Request" then
         return function(_, opts)
           if type(opts)=="table" and opts.Url then print("[mock Request] "..tostring(opts.Url)) end
-          return { Success=true, Body="", StatusCode=200, Headers={} }
+          return { Success=true, Body="--http-stub--", StatusCode=200, Headers={} }
         end
       end
       if k == "GetService" then
@@ -5322,7 +5437,7 @@ end
 syn = {
   request = function(opts)
     if type(opts)=="table" and opts.Url then print("[mock syn.request] "..tostring(opts.Url)) end
-    return { Success=true, Body="", StatusCode=200 }
+    return { Success=true, Body="--http-stub--", StatusCode=200 }
   end
 }
 http = syn
@@ -5615,6 +5730,107 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       return _run2(src);
     };
   }
+
+  
+  // ===== Tools tab =====
+  document.querySelectorAll("#proxyPresets [data-proxy]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const p = btn.getAttribute("data-proxy");
+      if ($("#corsProxy")) $("#corsProxy").value = p;
+      if ($("#useCorsProxy")) $("#useCorsProxy").checked = true;
+      log("proxy set: " + p, "ok");
+      switchApp("deobf");
+    });
+  });
+
+  function toolB64Enc() {
+    const s = ($("#toolB64In") && $("#toolB64In").value) || "";
+    try {
+      $("#toolB64Out").value = btoa(unescape(encodeURIComponent(s)));
+    } catch (e) {
+      try { $("#toolB64Out").value = btoa(s); } catch (e2) { $("#toolB64Out").value = "encode failed"; }
+    }
+  }
+  function toolB64Dec() {
+    const s = (($("#toolB64In") && $("#toolB64In").value) || "").replace(/\s+/g, "");
+    try {
+      $("#toolB64Out").value = decodeURIComponent(escape(atob(s)));
+    } catch (e) {
+      try { $("#toolB64Out").value = atob(s); } catch (e2) { $("#toolB64Out").value = "decode failed"; }
+    }
+  }
+  if ($("#btnB64Enc")) $("#btnB64Enc").addEventListener("click", toolB64Enc);
+  if ($("#btnB64Dec")) $("#btnB64Dec").addEventListener("click", toolB64Dec);
+  if ($("#btnB64Copy")) $("#btnB64Copy").addEventListener("click", () => {
+    copyText(($("#toolB64Out") && $("#toolB64Out").value) || "").then(() => log("b64 out copied", "ok"));
+  });
+
+  function toDecEscapes(s) {
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      out += "\\" + String(s.charCodeAt(i) & 0xff).padStart(3, "0");
+    }
+    return out;
+  }
+  function fromDecEscapes(s) {
+    return s.replace(/\\([0-9]{1,3})/g, (_, d) => String.fromCharCode(parseInt(d, 10) & 0xff));
+  }
+  function toHexEscapes(s) {
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      out += "\\x" + (s.charCodeAt(i) & 0xff).toString(16).padStart(2, "0");
+    }
+    return out;
+  }
+  function fromHexEscapes(s) {
+    return s.replace(/\\x([0-9a-fA-F]{2})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+  }
+  if ($("#btnToDec")) $("#btnToDec").addEventListener("click", () => {
+    $("#toolEscOut").value = toDecEscapes(($("#toolEscIn") && $("#toolEscIn").value) || "");
+  });
+  if ($("#btnFromDec")) $("#btnFromDec").addEventListener("click", () => {
+    $("#toolEscOut").value = fromDecEscapes(($("#toolEscIn") && $("#toolEscIn").value) || "");
+  });
+  if ($("#btnToHex")) $("#btnToHex").addEventListener("click", () => {
+    $("#toolEscOut").value = toHexEscapes(($("#toolEscIn") && $("#toolEscIn").value) || "");
+  });
+  if ($("#btnFromHex")) $("#btnFromHex").addEventListener("click", () => {
+    $("#toolEscOut").value = fromHexEscapes(($("#toolEscIn") && $("#toolEscIn").value) || "");
+  });
+
+  const SNIPS = {
+    print: "print('hello from ShivLab')\nprint(1+2*3)\n",
+    http: "print(game:HttpGet('https://example.com/script.lua'))\n-- returns --http-stub-- in this sandbox\n",
+    hook: "print(typeof, type)\nprint(identifyexecutor and table.concat({identifyexecutor()}, ' ') or 'no id')\n",
+    id: "print(identifyexecutor())\n",
+    b64: "local b='cHJpbnQoJ2I2NCBvaycp'\n-- decode yourself or use Tools tab\nprint('paste decoded via Tools')\n"
+  };
+  document.querySelectorAll("#snippetBtns [data-snip]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-snip");
+      const code = SNIPS[id] || "";
+      if ($("#conIn")) $("#conIn").value = code;
+      switchApp("console");
+      log("snippet → console: " + id, "ok");
+    });
+  });
+
+  if ($("#btnToolExportState")) $("#btnToolExportState").addEventListener("click", () => {
+    const state = {
+      fileName: fileName || null,
+      resultsCount: results ? results.length : 0,
+      juicy: results ? results.filter((r) => r.juicy).map((r) => r.str).slice(0, 50) : [],
+      cleanLen: (lastCleanSource || "").length,
+      theme: (document.body.className.match(/theme-\\w+/) || [])[0] || "default",
+      ts: new Date().toISOString()
+    };
+    download("shivlab_session.json", JSON.stringify(state, null, 2), "application/json");
+  });
+  if ($("#btnToolClearStorage")) $("#btnToolClearStorage").addEventListener("click", () => {
+    try { localStorage.removeItem("luraph_theme"); } catch (e) {}
+    applyTheme("default");
+    log("theme storage cleared", "ok");
+  });
 
   setTimeout(() => {
     const F = getFengari();
