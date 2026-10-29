@@ -1124,6 +1124,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <button type="button" class="app-tab" data-app="encrypt">Encryptor</button>
   <button type="button" class="app-tab" data-app="console">Console</button>
   <button type="button" class="app-tab" data-app="tools">Tools</button>
+  <button type="button" class="app-tab" data-app="lab">Lab</button>
 </nav>
 <main>
 <div class="app-panel active" id="panelDeobf" data-app="deobf">
@@ -1164,6 +1165,12 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   </div>
 
   <div class="progress"><div id="bar"></div></div>
+  <div class="panel" id="histPanel" style="display:none">
+    <div class="panel-h"><h2>Session history</h2>
+      <button type="button" id="btnHistClear" style="font-size:0.7rem;padding:4px 8px">Clear history</button>
+    </div>
+    <div id="histList" class="log" style="max-height:120px"></div>
+  </div>
   <div class="troll-banner" id="trollBanner">HONEYPOT / TROLL DETECTED — recursive self-decrypt. Do not run on a real account.</div>
 
   <div class="panel">
@@ -1419,6 +1426,18 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       </div>
 
       <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">LOADSTRING UNWRAP</h2>
+        <textarea id="toolUnwrapIn" placeholder="loadstring(...)()  or  return(function()...end)()" style="min-height:90px"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="primary" id="btnUnwrapLS">Unwrap layers</button>
+          <button type="button" class="copy" id="btnUnwrapCopy">Copy</button>
+          <button type="button" id="btnUnwrapToDeobf">→ Deobf</button>
+          <button type="button" id="btnUnwrapToConsole">→ Console</button>
+        </div>
+        <textarea id="toolUnwrapOut" placeholder="peeled result" style="min-height:90px;margin-top:8px"></textarea>
+      </div>
+
+      <div>
         <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">QUICK SNIPPETS</h2>
         <div class="row" id="snippetBtns">
           <button type="button" data-snip="print">print test</button>
@@ -1446,6 +1465,82 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
         <div class="row">
           <button type="button" id="btnToolExportState">Export session JSON</button>
           <button type="button" id="btnToolClearStorage">Clear saved theme</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+<div class="app-panel" id="panelLab" data-app="lab">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Lab · compare · hash · extract · notes</h2>
+      <span class="tag">workspace</span>
+    </div>
+    <div style="padding:14px 16px;display:grid;gap:16px">
+
+      <div class="encrypt-grid">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">A (before / encrypted)</h2>
+          <textarea id="labA" placeholder="paste side A"></textarea>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">B (after / decrypted)</h2>
+          <textarea id="labB" placeholder="paste side B"></textarea>
+        </div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btnLabCompare">Compare</button>
+        <button type="button" id="btnLabLoadClean">B ← Clean payload</button>
+        <button type="button" id="btnLabLoadSource">A ← Current source</button>
+        <button type="button" class="copy" id="btnLabSwap">Swap A/B</button>
+      </div>
+      <div class="console-out" id="labDiffOut" style="min-height:120px"><div class="line-info">compare two blobs — length, hash, line delta, shared urls</div></div>
+
+      <div class="encrypt-grid">
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">HASH / FINGERPRINT</h2>
+          <textarea id="labHashIn" placeholder="text to hash"></textarea>
+          <div class="row" style="margin-top:8px">
+            <button type="button" class="primary" id="btnLabHash">SHA-256 + stats</button>
+            <button type="button" class="copy" id="btnLabHashCopy">Copy hash</button>
+          </div>
+        </div>
+        <div>
+          <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">RESULT</h2>
+          <textarea id="labHashOut" readonly placeholder="hash output"></textarea>
+        </div>
+      </div>
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">URL / WEBHOOK SWEEP</h2>
+        <textarea id="labSweepIn" placeholder="paste any log or script" style="min-height:100px"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="primary" id="btnLabSweep">Extract URLs + webhooks</button>
+          <button type="button" class="copy" id="btnLabSweepCopy">Copy list</button>
+          <button type="button" class="report" id="btnLabSweepDeobf">Send to Deobf paste</button>
+        </div>
+        <div class="console-out" id="labSweepOut" style="min-height:80px;margin-top:8px"><div class="line-info">unique urls appear here</div></div>
+      </div>
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">BYTE HISTOGRAM</h2>
+        <textarea id="labHistIn" placeholder="paste binary-ish or encrypted blob" style="min-height:80px"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="primary" id="btnLabHist">Analyze entropy</button>
+        </div>
+        <div class="console-out" id="labHistOut" style="min-height:100px;margin-top:8px"><div class="line-info">entropy · top bytes · printable ratio</div></div>
+      </div>
+
+      <div>
+        <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:8px;letter-spacing:0.06em">SCRATCH NOTES</h2>
+        <textarea id="labNotes" placeholder="keys, offsets, thoughts — saved in localStorage" style="min-height:120px"></textarea>
+        <div class="row" style="margin-top:8px">
+          <button type="button" class="primary" id="btnLabNotesSave">Save notes</button>
+          <button type="button" id="btnLabNotesLoad">Reload</button>
+          <button type="button" id="btnLabNotesClear">Clear notes</button>
         </div>
       </div>
 
@@ -5831,6 +5926,157 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     applyTheme("default");
     log("theme storage cleared", "ok");
   });
+
+  
+  // ===== 1) Session history =====
+  const __hist = [];
+  function pushHistory(kind, detail) {
+    const entry = {
+      t: new Date().toLocaleTimeString(),
+      kind: kind || "event",
+      detail: String(detail || "").slice(0, 160)
+    };
+    __hist.unshift(entry);
+    if (__hist.length > 40) __hist.pop();
+    renderHistory();
+  }
+  function renderHistory() {
+    const panel = $("#histPanel");
+    const list = $("#histList");
+    if (!list) return;
+    if (!__hist.length) {
+      if (panel) panel.style.display = "none";
+      return;
+    }
+    if (panel) panel.style.display = "block";
+    list.innerHTML = __hist.map((e) =>
+      '<span style="color:var(--accent)">' + e.t + "</span>  <b>" + e.kind + "</b>  " + escapeHtml(e.detail)
+    ).join("\n");
+  }
+  if ($("#btnHistClear")) $("#btnHistClear").addEventListener("click", () => {
+    __hist.length = 0;
+    renderHistory();
+  });
+  // hook log lightly
+  if (typeof log === "function") {
+    const _logH = log;
+    log = function(msg, cls) {
+      _logH(msg, cls);
+      if (cls === "ok" || cls === "err" || cls === "troll") {
+        pushHistory(cls || "info", msg);
+      }
+    };
+  }
+
+  // ===== 2) Loadstring unwrap tool =====
+  function unwrapLoadstringLayers(src) {
+    let s = String(src || "").trim();
+    const steps = [];
+    for (let round = 0; round < 12; round++) {
+      let next = s;
+      // loadstring([[...]])()
+      let m = next.match(/^load(?:string)?\s*\(\s*\[\[([\s\S]*?)\]\]\s*\)\s*\(\s*\)\s*$/);
+      if (m) { steps.push("long-bracket"); s = m[1]; continue; }
+      m = next.match(/^load(?:string)?\s*\(\s*\[=\[([\s\S]*?)\]=\]\s*\)\s*\(\s*\)\s*$/);
+      if (m) { steps.push("long-bracket="); s = m[1]; continue; }
+      // loadstring("...")()
+      m = next.match(/^load(?:string)?\s*\(\s*(["'])([\s\S]*?)\1\s*\)\s*\(\s*\)\s*$/);
+      if (m) {
+        steps.push("quoted");
+        s = m[2].replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\'/g, "'").replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+        continue;
+      }
+      // return(function(...) ... end)(...)
+      m = next.match(/^return\s*\(\s*function\s*\(([^)]*)\)\s*([\s\S]*?)\s*end\s*\)\s*\(([\s\S]*)\)\s*$/);
+      if (m && m[2].length > 20) {
+        steps.push("return-function");
+        // keep inner body as best effort
+        s = "return(function(" + m[1] + ")\n" + m[2] + "\nend)(" + m[3] + ")";
+        // only peel if outer is pure wrapper with loadstring inside
+        const inner = m[2].match(/load(?:string)?\s*\(\s*\[\[([\s\S]*?)\]\]\s*\)/);
+        if (inner) { s = inner[1]; steps.push("inner-long-bracket"); continue; }
+        break;
+      }
+      // base64 blob only
+      m = next.match(/^(?:return\s+)?load(?:string)?\s*\(\s*(?:syn\.crypt\.base64\.decode|crypt\.base64decode|base64\.decode)?\s*\(?\s*["']([A-Za-z0-9+\/=\s]{40,})["']\s*\)?\s*\)\s*\(?\s*\)?\s*$/i);
+      if (m) {
+        try {
+          s = decodeURIComponent(escape(atob(m[1].replace(/\s+/g, ""))));
+          steps.push("b64");
+          continue;
+        } catch (e) {}
+      }
+      // pure b64
+      if (/^[A-Za-z0-9+\/=\s]+$/.test(next) && next.replace(/\s/g, "").length > 40) {
+        try {
+          const d = decodeURIComponent(escape(atob(next.replace(/\s+/g, ""))));
+          if (/function|local |print|return/.test(d)) { s = d; steps.push("pure-b64"); continue; }
+        } catch (e) {}
+      }
+      break;
+    }
+    return { text: s, steps };
+  }
+
+  if ($("#btnUnwrapLS")) $("#btnUnwrapLS").addEventListener("click", () => {
+    const src = ($("#toolUnwrapIn") && $("#toolUnwrapIn").value) || "";
+    const r = unwrapLoadstringLayers(src);
+    if ($("#toolUnwrapOut")) $("#toolUnwrapOut").value = r.text;
+    log("unwrap steps: " + (r.steps.join(" → ") || "none"), "ok");
+    pushHistory("unwrap", r.steps.join(",") || "none");
+  });
+  if ($("#btnUnwrapCopy")) $("#btnUnwrapCopy").addEventListener("click", () => {
+    copyText(($("#toolUnwrapOut") && $("#toolUnwrapOut").value) || "").then(() => log("unwrap copied", "ok"));
+  });
+  if ($("#btnUnwrapToDeobf")) $("#btnUnwrapToDeobf").addEventListener("click", () => {
+    const s = ($("#toolUnwrapOut") && $("#toolUnwrapOut").value) || ($("#toolUnwrapIn") && $("#toolUnwrapIn").value) || "";
+    if ($("#pasteBox")) $("#pasteBox").value = s;
+    sourceText = s;
+    switchApp("deobf");
+  });
+  if ($("#btnUnwrapToConsole")) $("#btnUnwrapToConsole").addEventListener("click", () => {
+    const s = ($("#toolUnwrapOut") && $("#toolUnwrapOut").value) || "";
+    if ($("#conIn")) $("#conIn").value = s;
+    switchApp("console");
+  });
+
+  // ===== 3) Byte histogram / entropy =====
+  function labHistogram() {
+    const s = ($("#labHistIn") && $("#labHistIn").value) || "";
+    const out = $("#labHistOut");
+    if (!out) return;
+    const freq = new Array(256).fill(0);
+    for (let i = 0; i < s.length; i++) freq[s.charCodeAt(i) & 0xff]++;
+    const n = s.length || 1;
+    let ent = 0, printable = 0;
+    for (let i = 0; i < 256; i++) {
+      if (!freq[i]) continue;
+      const p = freq[i] / n;
+      ent -= p * Math.log2(p);
+      if ((i >= 32 && i < 127) || i === 9 || i === 10 || i === 13) printable += freq[i];
+    }
+    const top = freq
+      .map((c, b) => ({ b, c }))
+      .filter((x) => x.c > 0)
+      .sort((a, b) => b.c - a.c)
+      .slice(0, 12);
+    out.innerHTML = "";
+    function line(msg, cls) {
+      const d = document.createElement("div");
+      d.className = "line-" + (cls || "print");
+      d.textContent = msg;
+      out.appendChild(d);
+    }
+    line("len " + s.length + " · entropy " + ent.toFixed(3) + " / 8 · printable " + ((100 * printable) / n).toFixed(1) + "%", "info");
+    if (ent > 7.5) line("high entropy — likely encrypted/compressed", "err");
+    else if (ent < 4.5) line("low entropy — likely plain/repeated", "ok");
+    else line("mid entropy — mixed or lightly encoded", "print");
+    top.forEach((x) => {
+      const ch = x.b >= 32 && x.b < 127 ? JSON.stringify(String.fromCharCode(x.b)) : "";
+      line("0x" + x.b.toString(16).padStart(2, "0") + "  count " + x.c + "  " + ch, "print");
+    });
+  }
+  if ($("#btnLabHist")) $("#btnLabHist").addEventListener("click", labHistogram);
 
   setTimeout(() => {
     const F = getFengari();
