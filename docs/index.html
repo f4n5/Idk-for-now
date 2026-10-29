@@ -4712,7 +4712,7 @@ print("__VM_FINISHED__")
     }
     const { lua, lauxlib, to_luastring, to_jsstring, L } = session;
     try {
-      // print redirect
+      // print
       if (typeof lua.lua_pushjsfunction === "function") {
         lua.lua_pushjsfunction(L, function (LL) {
           const n = lua.lua_gettop(LL);
@@ -4729,41 +4729,138 @@ print("__VM_FINISHED__")
                 parts.push(lua.lua_toboolean(LL, i) ? "true" : "false");
               } else if (t === lua.LUA_TNIL) {
                 parts.push("nil");
+              } else if (lauxlib.luaL_tolstring) {
+                lauxlib.luaL_tolstring(LL, i);
+                parts.push(to_jsstring(lua.lua_tolstring(LL, -1)) || "?");
+                lua.lua_pop(LL, 1);
               } else {
-                // tostring via luaL_tolstring if available
-                if (lauxlib.luaL_tolstring) {
-                  lauxlib.luaL_tolstring(LL, i);
-                  parts.push(to_jsstring(lua.lua_tolstring(LL, -1)) || "?");
-                  lua.lua_pop(LL, 1);
-                } else {
-                  parts.push(typeof t === "number" ? ("type" + t) : "?");
-                }
+                parts.push("?");
               }
-            } catch (e) {
-              parts.push("?");
-            }
+            } catch (e) { parts.push("?"); }
           }
           conPrint(parts.join("\t"), "print");
           return 0;
         });
         lua.lua_setglobal(L, to_luastring("print"));
       }
-      // loadstring alias for 5.1 style
-      try {
-        lua.lua_getglobal(L, to_luastring("load"));
+
+      // Proper loadstring: accept string OR function, return chunk function
+      // Lua 5.3 fengari: load() exists; Roblox uses loadstring(str)
+      const loadstringJs = function (LL) {
+        // arg1 = source string (or function for load)
+        const t = lua.lua_type(LL, 1);
+        if (t === lua.LUA_TFUNCTION) {
+          // already a function — return it
+          return 1;
+        }
+        if (t !== lua.LUA_TSTRING && t !== lua.LUA_TNUMBER) {
+          // coerce tostring if possible
+          if (t === lua.LUA_TTABLE) {
+            lua.lua_pushstring(LL, to_luastring("-- mock: loadstring got table (HttpGet stub returned empty string expected)\\nreturn function() end"));
+          } else {
+            lua.lua_pushnil(LL);
+            lua.lua_pushstring(LL, to_luastring("bad argument #1 to 'loadstring' (string expected)"));
+            return 2;
+          }
+        }
+        // use luaL_loadstring / loadbuffer
+        const src = lua.lua_tolstring(LL, 1);
+        const st = lauxlib.luaL_loadbuffer
+          ? lauxlib.luaL_loadbuffer(LL, src, null, to_luastring("=(loadstring)"))
+          : lauxlib.luaL_loadstring(LL, src);
+        if (st !== 0) {
+          // error message already on stack
+          lua.lua_pushnil(LL);
+          lua.lua_insert(LL, -2);
+          return 2; // nil, err
+        }
+        return 1; // function
+      };
+      if (typeof lua.lua_pushjsfunction === "function") {
+        lua.lua_pushjsfunction(L, loadstringJs);
         lua.lua_setglobal(L, to_luastring("loadstring"));
-      } catch (e) {}
+        // also ensure load works on strings the same way for 5.1 scripts
+        lua.lua_pushjsfunction(L, loadstringJs);
+        lua.lua_setglobal(L, to_luastring("load"));
+      }
+
       let boot = "";
       if (useMocks) {
-        boot =
-          (window.__MOCK_BOOT || "") +
-          "\n" +
-          "game=game or {}; setmetatable(game,{__index=function() return setmetatable({},{__index=function() return function() end end, __call=function() return {} end}) end})\n" +
-          "workspace=workspace or game; script=script or {Name='Script'}; Instance={new=function() return setmetatable({},{__index=function() return function() end end}) end}\n" +
-          "getgenv=getgenv or function() return _G end\n" +
-          "identifyexecutor=identifyexecutor or function() return 'ShivLab','1.0' end\n" +
-          "warn=warn or print\n" +
-          "if load and not loadstring then loadstring=load end\n";
+        // HttpGet MUST return a string or loadstring(game:HttpGet(...)) dies
+        boot = String.raw`
+-- ShivLab console mocks
+local function __str_stub(url)
+  print("[mock HttpGet] " .. tostring(url))
+  return "-- http stub from console\\nreturn function() print('[stub] remote script body') end"
+end
+local function __callable()
+  return setmetatable({}, {
+    __call = function() return __callable() end,
+    __index = function(t, k)
+      if k == "HttpGet" or k == "HttpGetAsync" or k == "GetAsync" then
+        return function(_, url) return __str_stub(url) end
+      end
+      if k == "PostAsync" then
+        return function(_, url, body) print("[mock PostAsync] "..tostring(url)); return "" end
+      end
+      if k == "RequestAsync" or k == "Request" then
+        return function(_, opts)
+          if type(opts)=="table" and opts.Url then print("[mock Request] "..tostring(opts.Url)) end
+          return { Success=true, Body="", StatusCode=200, Headers={} }
+        end
+      end
+      if k == "GetService" then
+        return function(_, name) return __callable() end
+      end
+      if k == "FindFirstChild" or k == "WaitForChild" or k == "FindFirstChildOfClass" then
+        return function() return __callable() end
+      end
+      return __callable()
+    end
+  })
+end
+game = __callable()
+workspace = game
+script = { Name = "Script", Parent = game, Source = "" }
+Instance = { new = function() return __callable() end }
+Vector3 = { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
+CFrame = { new = function() return {} end }
+Color3 = { new = function() return {} end, fromRGB = function() return {} end }
+UDim2 = { new = function() return {} end }
+Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function() return 0 end }) end })
+task = { wait = function() end, spawn = function(f) if type(f)=="function" then pcall(f) end end, defer = function(f) if type(f)=="function" then pcall(f) end end }
+wait = task.wait
+spawn = task.spawn
+getgenv = function() return _G end
+getrenv = function() return _G end
+identifyexecutor = function() return "ShivLab", "1.0" end
+getexecutorname = identifyexecutor
+warn = print
+typeof = typeof or function(v)
+  local t = type(v)
+  if t == "table" then return "Instance" end
+  return t
+end
+syn = {
+  request = function(opts)
+    if type(opts)=="table" and opts.Url then print("[mock syn.request] "..tostring(opts.Url)) end
+    return { Success=true, Body="", StatusCode=200 }
+  end
+}
+http = syn
+request = syn.request
+http_request = syn.request
+-- bit32 polyfill for older chunks
+if not bit32 then
+  bit32 = {
+    bxor = function(a,b) local r=0 p=1 a=a%4294967296 b=b%4294967296 for i=1,32 do local x=a%2 y=b%2 if x~=y then r=r+p end a=(a-x)/2 b=(b-y)/2 p=p*2 end return r end,
+    band = function(a,b) local r=0 p=1 a=a%4294967296 b=b%4294967296 for i=1,32 do local x=a%2 y=b%2 if x==1 and y==1 then r=r+p end a=(a-x)/2 b=(b-y)/2 p=p*2 end return r end,
+    bor = function(a,b) local r=0 p=1 a=a%4294967296 b=b%4294967296 for i=1,32 do local x=a%2 y=b%2 if x==1 or y==1 then r=r+p end a=(a-x)/2 b=(b-y)/2 p=p*2 end return r end,
+    rshift = function(a,n) return math.floor((a%4294967296)/2^n) end,
+    lshift = function(a,n) return (a*2^n)%4294967296 end,
+  }
+end
+`
       }
       const full = boot + "\n" + code;
       const status = lauxlib.luaL_dostring(L, to_luastring(full));
@@ -4782,7 +4879,7 @@ print("__VM_FINISHED__")
     }
   }
 
-  function cleanConsole() {
+function cleanConsole() {
     if ($("#conIn")) $("#conIn").value = "";
     if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleaned</div>';
   }
