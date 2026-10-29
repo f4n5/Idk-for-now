@@ -132,6 +132,73 @@ button.chain { background: #9b59b6; border-color: #9b59b6; color: #fff; }
 }
 .troll-badge.show { display: inline-block; }
 
+
+/* ---- themes ---- */
+body.theme-matrix {
+  --bg: #050a05;
+  --panel: #0a140a;
+  --border: #1a3a1a;
+  --text: #b6f5b6;
+  --muted: #5a9a5a;
+  --accent: #33ff66;
+  --good: #33ff66;
+  --warn: #c8ff33;
+  --bad: #ff4466;
+  --hl: #a8ff60;
+}
+body.theme-cyber {
+  --bg: #120e08;
+  --panel: #1a140c;
+  --border: #3a2a12;
+  --text: #ffe6a8;
+  --muted: #a88848;
+  --accent: #ffcc33;
+  --good: #ffee66;
+  --warn: #ff9933;
+  --bad: #ff4466;
+  --hl: #ffe566;
+}
+body.theme-vex {
+  --bg: #060b12;
+  --panel: #0c121c;
+  --border: #1a2a3c;
+  --text: #d0e8ff;
+  --muted: #6a8aaa;
+  --accent: #33d6ff;
+  --good: #3dffc8;
+  --warn: #ffe066;
+  --bad: #ff6b8a;
+  --hl: #7af0ff;
+}
+.hl-http { color: #5b8def; font-weight: 700; text-shadow: 0 0 8px rgba(91,141,239,0.55); }
+.hl-discord { color: #7289da; font-weight: 700; text-shadow: 0 0 8px rgba(114,137,218,0.55); }
+.hl-webhook { color: #f07178; font-weight: 700; text-shadow: 0 0 8px rgba(240,113,120,0.55); }
+.hl-key { color: #f5c542; font-weight: 700; text-shadow: 0 0 8px rgba(245,197,66,0.45); }
+.hl-load { color: #3dd68c; font-weight: 700; text-shadow: 0 0 8px rgba(61,214,140,0.45); }
+.hl-rbx { color: #e08cff; font-weight: 700; text-shadow: 0 0 8px rgba(224,140,255,0.45); }
+.theme-bar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+}
+.theme-dot {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  cursor: pointer;
+  transition: transform .12s, box-shadow .12s;
+}
+.theme-dot:hover { transform: scale(1.15); }
+.theme-dot.active { box-shadow: 0 0 0 2px var(--accent); }
+.theme-dot[data-theme="default"] { background: #5b8def; }
+.theme-dot[data-theme="matrix"] { background: #33ff66; }
+.theme-dot[data-theme="cyber"] { background: #ffcc33; }
+.theme-dot[data-theme="vex"] { background: #33d6ff; }
+button.patch { background: #e17055; border-color: #e17055; color: #fff; }
+button.patch:hover { filter: brightness(1.08); }
+button.copy { background: #2d3436; }
+
 @keyframes fadeUp {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -372,10 +439,13 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
     <button class="primary" id="btnRun" disabled>Run Static</button>
     <button class="vm" id="btnVM" disabled>Execute Lua VM</button>
     <button class="wad" id="btnWAD" disabled title="WeAreDevs / Prometheus string pass">WeAreDevs / Prometheus</button>
+    <button class="patch" id="btnPatch" disabled title="Inject missing mocks and re-run VM">Patch &amp; Run</button>
     <button class="chain" id="btnChain" disabled title="Auto-unwrap nested loadstring stages">Auto-Chain VM</button>
+    <button class="copy" id="btnCopyJuicy" disabled>Copy Juicy</button>
+    <button class="copy" id="btnCopyAll" disabled>Copy All</button>
     <button id="btnExport" disabled>Export TXT</button>
     <button id="btnExportJson" disabled>Export JSON</button>
-    <button id="btnFinal" disabled>Download Final .lua</button>
+    <button id="btnFinal" disabled>Export Clean .lua</button>
     <button id="btnClear">Clear</button>
   </div>
 
@@ -982,6 +1052,7 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
     // loadstring returns a callable that, when invoked, emits the payload
     // for the JS chain and runs it via pcall so syntax errors stay contained.
     const bootstrap = `
+${(window.__MOCK_BOOT||"")}
 local _char = string.char
 string.char = function(...)
   local s = _char(...)
@@ -2488,6 +2559,7 @@ print("__VM_FINISHED__")
       $("#btnRun").disabled = false;
       $("#btnVM").disabled = false;
       if ($("#btnWAD")) $("#btnWAD").disabled = false;
+      if ($("#btnPatch")) $("#btnPatch").disabled = false;
       $("#btnChain").disabled = false;
       $("#verTag").textContent = fileName;
       const F = getFengari();
@@ -2701,6 +2773,401 @@ print("__VM_FINISHED__")
   });
 
   // boot check
+  
+  // ===== Keyword highlighter for results =====
+  const HL_RULES = [
+    { re: /(https?:\/\/(?:discord(?:app)?\.com|discord\.gg)[^\s"'<>]*)/gi, cls: "hl-discord" },
+    { re: /(https?:\/\/[^\s"'<>]*webhook[^\s"'<>]*)/gi, cls: "hl-webhook" },
+    { re: /(https?:\/\/[^\s"'<>]+)/gi, cls: "hl-http" },
+    { re: /\b(HttpGet|HttpPost|RequestAsync|syn\.request|http\.request)\b/gi, cls: "hl-http" },
+    { re: /\b(webhook|Webhook)\b/gi, cls: "hl-webhook" },
+    { re: /\b(api[_-]?key|token|secret|password|authorization|bearer)\b/gi, cls: "hl-key" },
+    { re: /\b(loadstring|getfenv|setfenv)\b/gi, cls: "hl-load" },
+    { re: /\b(game:GetService|Players\.LocalPlayer|FireServer|InvokeServer|RemoteEvent|RemoteFunction|rbxassetid)\b/gi, cls: "hl-rbx" },
+  ];
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function highlightText(s) {
+    // work on escaped text; apply spans via placeholder tokens
+    let out = escapeHtml(s);
+    // apply rules in order; avoid double-wrapping by using a temp marker
+    const slots = [];
+    function stash(html) {
+      const id = slots.length;
+      slots.push(html);
+      return "\u0000" + id + "\u0001";
+    }
+    for (const rule of HL_RULES) {
+      out = out.replace(rule.re, (m) => stash('<span class="' + rule.cls + '">' + m + "</span>"));
+    }
+    out = out.replace(/\u0000(\d+)\u0001/g, (_, i) => slots[Number(i)]);
+    return out;
+  }
+
+  // override render to use innerHTML highlight
+  const _renderOrig = typeof render === "function" ? render : null;
+
+  function render() {
+    const q = ($("#search").value || "").toLowerCase();
+    const onlyJ = $("#onlyJuicy") && $("#onlyJuicy").checked;
+    const onlyU = $("#onlyUrls") && $("#onlyUrls").checked;
+    const hideJunk = !$("#hideJunk") || $("#hideJunk").checked;
+    const frag = document.createDocumentFragment();
+    let shown = 0;
+    for (const r of results) {
+      if (onlyJ && !r.juicy) continue;
+      if (hideJunk && r.junk && !r.juicy) continue;
+      if (onlyU && !/(https?:\/\/|loadstring|webhook)/i.test(r.str)) continue;
+      if (q && r.str.toLowerCase().indexOf(q) < 0) continue;
+      const row = document.createElement("div");
+      row.className = "str" + (r.juicy ? " juicy" : r.junk ? " junk" : "");
+      const idx = document.createElement("div");
+      idx.className = "idx";
+      idx.textContent = r.index;
+      const val = document.createElement("div");
+      val.className = "val";
+      val.innerHTML = highlightText(r.str);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = (r.method || "") + " · score " + Math.round(r.score || 0) + (r.juicy ? " · JUICY" : "");
+      row.appendChild(idx);
+      row.appendChild(val);
+      row.appendChild(meta);
+      frag.appendChild(row);
+      shown++;
+    }
+    outEl.innerHTML = "";
+    if (!shown) outEl.innerHTML = '<div class="empty">no matching strings</div>';
+    else outEl.appendChild(frag);
+  }
+
+  // ===== Themes =====
+  function applyTheme(name) {
+    document.body.classList.remove("theme-matrix", "theme-cyber", "theme-vex");
+    if (name === "matrix") document.body.classList.add("theme-matrix");
+    else if (name === "cyber") document.body.classList.add("theme-cyber");
+    else if (name === "vex") document.body.classList.add("theme-vex");
+    document.querySelectorAll(".theme-dot").forEach((d) => {
+      d.classList.toggle("active", d.getAttribute("data-theme") === name || (name === "default" && d.getAttribute("data-theme") === "default"));
+    });
+    try { localStorage.setItem("luraph_theme", name); } catch (e) {}
+  }
+  document.querySelectorAll(".theme-dot").forEach((d) => {
+    d.addEventListener("click", () => applyTheme(d.getAttribute("data-theme") || "default"));
+  });
+  try {
+    const saved = localStorage.getItem("luraph_theme");
+    if (saved) applyTheme(saved);
+  } catch (e) {}
+
+  // ===== Copy helpers =====
+  function copyText(t) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(t);
+    }
+    const ta = document.createElement("textarea");
+    ta.value = t;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); } catch (e) {}
+    document.body.removeChild(ta);
+    return Promise.resolve();
+  }
+
+  function copyJuicy() {
+    const lines = results.filter((r) => r.juicy).map((r) => r.str);
+    if (!lines.length) { log("no juicy strings to copy", "info"); return; }
+    copyText(lines.join("\n")).then(() => log("copied " + lines.length + " juicy lines", "ok"));
+  }
+  function copyAll() {
+    const lines = results.map((r) => r.str);
+    if (!lines.length) { log("nothing to copy", "info"); return; }
+    copyText(lines.join("\n")).then(() => log("copied " + lines.length + " lines", "ok"));
+  }
+
+  // ===== Clean source export =====
+  let lastCleanSource = "";
+
+  function setCleanSource(s) {
+    lastCleanSource = s || "";
+    const b = $("#btnFinal");
+    if (b) b.disabled = !lastCleanSource;
+  }
+
+  function exportClean() {
+    const s = lastCleanSource || (results.length ? results.map((r) => "-- [" + r.index + "] " + r.str).join("\n") : "");
+    if (!s) { log("no clean source yet — run Auto-Chain or VM first", "err"); return; }
+    download((fileName || "payload").replace(/\.\w+$/, "") + "_clean.lua", s, "text/plain");
+    log("exported clean .lua (" + s.length + " chars)", "ok");
+  }
+
+  // ===== Discord webhook sandbox (harmless troll) =====
+  function extractWebhooks(text) {
+    const re = /https:\/\/(?:discord(?:app)?\.com)\/api\/webhooks\/\d+\/[A-Za-z0-9_\-]+/g;
+    const set = new Set();
+    let m;
+    const src = text || results.map((r) => r.str).join("\n");
+    while ((m = re.exec(src))) set.add(m[0]);
+    return Array.from(set);
+  }
+
+  async function fireWebhookTroll(url) {
+    const body = JSON.stringify({
+      content: "VEX WAS HERE",
+      username: "VEX Deobfuscator",
+      embeds: [{
+        title: "webhook sandboxed",
+        description: "harmless ping from the deobfuscator. your payload was recovered.",
+        color: 0x33d6ff
+      }]
+    });
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body
+      });
+      log("webhook troll → " + url.slice(0, 48) + "… status " + res.status, res.ok ? "ok" : "err");
+    } catch (e) {
+      log("webhook troll failed (CORS/network): " + (e && e.message ? e.message : e), "err");
+      log("tip: open browser console on a CORS-friendly context or use a proxy", "info");
+    }
+  }
+
+  async function trollAllWebhooks() {
+    const hooks = extractWebhooks();
+    if (!hooks.length) { log("no discord webhooks in results", "info"); return; }
+    log("firing harmless payload to " + hooks.length + " webhook(s)…", "info");
+    for (const u of hooks) await fireWebhookTroll(u);
+  }
+
+  // ===== Patch & Run — auto-mock missing globals and re-run VM =====
+  const autoMocks = new Set();
+  const COMMON_MOCKS = [
+    "game", "workspace", "script", "Instance", "Vector3", "CFrame", "Color3", "UDim2", "Rect", "Ray",
+    "Enum", "Axes", "Faces", "Drawing", "task", "wait", "spawn", "delay", "tick", "time", "typeof",
+    "getgenv", "getrenv", "getfenv", "setfenv", "newcclosure", "checkcaller", "islclosure", "isexecutorclosure",
+    "identifyexecutor", "getexecutorname", "gethui", "getrawmetatable", "setrawmetatable", "setreadonly",
+    "isreadonly", "hookfunction", "hookmetamethod", "newproxy", "cache", "cloneref", "compareinstances",
+    "HttpService", "Players", "RunService", "ReplicatedStorage", "UserInputService", "TweenService",
+    "MarketplaceService", "TeleportService", "StarterGui", "CoreGui", "Lighting", "Stats",
+    "syn", "http", "request", "http_request", "fluxus", "krnl", "electron", "sentinel",
+    "loadstring", "getgc", "getreg", "getnilinstances", "getconnections", "firesignal", "fireclickdetector",
+    "mouse1click", "mouse1press", "keypress", "keyrelease", "mousemoverel", "setclipboard", "setfflag",
+    "gethiddenproperty", "sethiddenproperty", "getsenv", "getcallingscript", "getscriptclosure"
+  ];
+
+  function buildMockBootstrap(extraNames) {
+    const names = Array.from(new Set([].concat(COMMON_MOCKS, Array.from(extraNames || []))));
+    const lines = [];
+    lines.push("local _M = {}");
+    lines.push("local function stub() return _M end");
+    lines.push("local function sink() return end");
+    lines.push("local mt = { __index = function() return stub end, __call = function() return stub end, __newindex = sink, __tostring = function() return 'mock' end }");
+    lines.push("local function mk() local t={} setmetatable(t, mt) return t end");
+    for (const n of names) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(n)) continue;
+      lines.push("if " + n + " == nil then " + n + " = mk() end");
+      lines.push("_G." + n + " = _G." + n + " or " + n);
+    }
+    // richer game mock
+    lines.push([[
+      "game = game or mk()",
+      "game.GetService = game.GetService or function(_, name)",
+      "  local s = mk()",
+      "  s.HttpGet = function(_, url) print('__CAP_HTTP__'..tostring(url)) return '' end",
+      "  s.GetAsync = s.HttpGet",
+      "  s.PostAsync = function(_, url, body) print('__CAP_HTTP__'..tostring(url)) return '' end",
+      "  s.RequestAsync = function(_, opts)",
+      "    if type(opts)=='table' and opts.Url then print('__CAP_HTTP__'..tostring(opts.Url)) end",
+      "    return {Success=true, Body='', StatusCode=200}",
+      "  end",
+      "  return s",
+      "end",
+      "syn = syn or {}",
+      "syn.request = syn.request or function(opts)",
+      "  if type(opts)=='table' and opts.Url then print('__CAP_HTTP__'..tostring(opts.Url)) end",
+      "  return {Success=true, Body='', StatusCode=200}",
+      "end",
+      "http = http or syn",
+      "request = request or syn.request",
+      "http_request = http_request or syn.request",
+    ].join("\n")]);
+    return lines.join("\n");
+  }
+
+  function parseMissingGlobal(errMsg) {
+    const s = String(errMsg || "");
+    let m = s.match(/attempt to (?:index|call) (?:a )?nil value \(global '([A-Za-z_][A-Za-z0-9_]*)'\)/);
+    if (m) return m[1];
+    m = s.match(/attempt to call (?:a )?nil value \(global '([A-Za-z_][A-Za-z0-9_]*)'\)/);
+    if (m) return m[1];
+    m = s.match(/global '([A-Za-z_][A-Za-z0-9_]*)'/);
+    if (m) return m[1];
+    m = s.match(/undefined global[:\s]+([A-Za-z_][A-Za-z0-9_]*)/i);
+    if (m) return m[1];
+    return null;
+  }
+
+  // Wrap runVM if present — we install a patched entry
+  const _runVM = typeof runVM === "function" ? runVM : null;
+  let patchRound = 0;
+  const MAX_PATCH_ROUNDS = 12;
+
+  function runVMPatched(src, fromPatch) {
+    if (!fromPatch) {
+      autoMocks.clear();
+      patchRound = 0;
+    }
+    // Prefixed mock bootstrap into a synthetic source that still loads user script via __SRC
+    // Actual injection happens inside existing runVM bootstrap if we set window.__EXTRA_MOCKS
+    window.__EXTRA_MOCKS = Array.from(autoMocks);
+    window.__MOCK_BOOT = buildMockBootstrap(autoMocks);
+    try {
+      if (_runVM) _runVM(src);
+      else runVM(src);
+    } catch (e) {
+      log("VM exception: " + (e && e.message ? e.message : e), "err");
+    }
+  }
+
+  // Hook log to detect VM errors and auto-patch
+  const _log = log;
+  log = function(msg, cls) {
+    _log(msg, cls);
+    if (cls === "err" && /Lua error:|VM crash:|luaL_dostring|attempt to/i.test(String(msg))) {
+      const name = parseMissingGlobal(msg);
+      if (name && patchRound < MAX_PATCH_ROUNDS) {
+        if (!autoMocks.has(name)) {
+          autoMocks.add(name);
+          patchRound++;
+          _log("auto-mock '" + name + "' — patch round " + patchRound, "info");
+          // schedule re-run
+          setTimeout(() => {
+            if (sourceText) runVMPatched(sourceText, true);
+          }, 30);
+        }
+      }
+    }
+    // capture clean source from chain finish messages if payload printed
+    if (/chain complete|final payload|VM done/i.test(String(msg)) && results.length) {
+      // heuristic clean: join non-junk high-score strings that look like code
+      const codey = results.filter((r) => !r.junk && (r.score > 40 || r.juicy));
+      if (codey.length && !lastCleanSource) {
+        // prefer longest string that looks like lua
+        let best = "";
+        for (const r of results) {
+          if (/function|local |return |end\b/.test(r.str) && r.str.length > best.length) best = r.str;
+        }
+        if (best) setCleanSource(best);
+      }
+    }
+  };
+
+  // Patch existing runVM bootstrap injection point via global
+  // (runVM reads window.__MOCK_BOOT if we patch it — inject by monkeypatching once)
+  (function patchRunVMBootstrap() {
+    // If runVM exists as function in this closure, wrap it
+    if (typeof runVM !== "function") return;
+    const orig = runVM;
+    runVM = function(src) {
+      // mutate by prepending mock boot into a storage the bootstrap already uses
+      // We set globals that bootstrap Lua can read if present; also force extra into bootstrap string
+      const prev = window.__MOCK_BOOT || "";
+      // Monkey: wrap by temporarily replacing sourceText? No — call orig and rely on autoMocks via log hook.
+      // Stronger: if we can find bootstrap template — we inject via lua before dostring by setting more globals.
+      return orig(src);
+    };
+  })();
+
+  // Explicit Patch & Run button — seeds common mocks and re-runs
+  function patchAndRun() {
+    if (!sourceText) return;
+    log("Patch & Run — injecting full mock set + any learned globals…", "info");
+    for (const n of COMMON_MOCKS) autoMocks.add(n);
+    patchRound = 0;
+    // Rebuild by calling VM with a prepended lua chunk via loadstring path:
+    // simplest reliable approach: stash mocks into a global lua string that runVM bootstrap executes first.
+    // We augment source by wrapping: mocks + original is still via __SRC inside runVM.
+    // Force re-entry:
+    runVMPatched(sourceText, false);
+    // Enable webhook troll if any
+    const hooks = extractWebhooks();
+    if (hooks.length) {
+      log("found " + hooks.length + " discord webhook(s) — use console: trollAllWebhooks()", "info");
+    }
+  }
+
+  // Expose for console
+  window.trollAllWebhooks = trollAllWebhooks;
+  window.fireWebhookTroll = fireWebhookTroll;
+
+  // Wire buttons
+  const btnPatch = $("#btnPatch");
+  if (btnPatch) btnPatch.addEventListener("click", () => {
+    btnPatch.disabled = true;
+    try { patchAndRun(); } catch (e) { log("patch fail: " + e.message, "err"); }
+    btnPatch.disabled = false;
+  });
+  const btnCJ = $("#btnCopyJuicy");
+  if (btnCJ) btnCJ.addEventListener("click", copyJuicy);
+  const btnCA = $("#btnCopyAll");
+  if (btnCA) btnCA.addEventListener("click", copyAll);
+  const btnFinal = $("#btnFinal");
+  if (btnFinal) {
+    btnFinal.removeEventListener && btnFinal.onclick;
+    btnFinal.addEventListener("click", exportClean);
+  }
+
+  // Enable new buttons on file load — patch loadFile path by observing btnVM enable
+  const _btnVM = $("#btnVM");
+  if (_btnVM) {
+    const obs = new MutationObserver(() => {
+      const dis = _btnVM.disabled;
+      if (btnPatch) btnPatch.disabled = dis;
+      if (btnCJ) btnCJ.disabled = dis && !results.length;
+      if (btnCA) btnCA.disabled = dis && !results.length;
+    });
+    obs.observe(_btnVM, { attributes: true, attributeFilter: ["disabled"] });
+  }
+
+  // When results update, enable copy buttons
+  const _setStats = setStats;
+  setStats = function(o) {
+    _setStats(o);
+    if ($("#btnCopyJuicy")) $("#btnCopyJuicy").disabled = !results.length;
+    if ($("#btnCopyAll")) $("#btnCopyAll").disabled = !results.length;
+  };
+
+  // Webhook button optional in results header — inject if missing
+  if (!$("#btnTrollHooks")) {
+    const row = document.querySelector(".panel-h .row") || document.querySelector(".panel-h");
+    if (row) {
+      const b = document.createElement("button");
+      b.id = "btnTrollHooks";
+      b.className = "copy";
+      b.textContent = "Troll Webhooks";
+      b.title = "POST harmless 'VEX WAS HERE' to recovered Discord webhooks";
+      b.addEventListener("click", () => trollAllWebhooks());
+      row.appendChild(b);
+    }
+  }
+
+  // Improve chain finish → clean source: if window.__LAST_PAYLOAD set by chain
+  setInterval(() => {
+    if (window.__LAST_PAYLOAD && window.__LAST_PAYLOAD !== lastCleanSource) {
+      setCleanSource(window.__LAST_PAYLOAD);
+    }
+  }, 500);
+
+
   setTimeout(() => {
     const F = getFengari();
     if (F) log("Fengari " + (F.FENGARI_VERSION || "ok") + " bundled offline", "ok");
