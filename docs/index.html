@@ -700,6 +700,11 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <summary>MoonSec V3+</summary>
       <p>Detects the <code>This file was protected with MoonSec V3.x</code> banner and the <code>:gsub('.+', function() … end)</code> init. Static path extracts literals + best-effort XOR/shuffle. VM hooks <code>string.gsub</code> so init side-effects run; Auto-Chain strips the gsub head and peels nested <code>return(function(...))</code>.</p>
     </details>
+    <details>
+      <summary>Coverage / god-mode decrypt</summary>
+      <p>Static candidates per string: raw, b64 (std/url/custom), P-map, rolling/LCG/acc XOR, single-byte, multi-byte, RC4, Vigenere, rot, ROL/ROR, NOT, reverse, delta, Base32, Ascii85, zlib-header strip, JSON unwrap, layered b64+xor/rc4. Detectors route MoonSec, Luraph, WAD, PSU/Pandora, Shadow, IronBrew/Aztup, bytecode VMs, loadstring wrappers. Auto-Chain peels wrappers + nested return(function). Nothing is 100% — custom per-build VMs still need Patch &amp; Run / VM.</p>
+    </details>
+
 
 
   </div>
@@ -2505,6 +2510,166 @@ print("__VM_FINISHED__")
       }
       return out;
     }
+    
+    // ===== GOD-MODE transforms =====
+    function revBytes(bytes) {
+      const out = bytes.slice(); out.reverse(); return out;
+    }
+    function xorConst(bytes, k) {
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ k) & 0xff;
+      return out;
+    }
+    function xorRolling(bytes, seed, mul, add) {
+      let s = seed & 0xff;
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        out[i] = (bytes[i] ^ s) & 0xff;
+        s = ((s * (mul || 131) + (add || 7)) & 0xff);
+      }
+      return out;
+    }
+    function xorKeyStr(bytes, key) {
+      const kb = [];
+      for (let i = 0; i < key.length; i++) kb.push(key.charCodeAt(i) & 0xff);
+      if (!kb.length) return bytes;
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) out[i] = (bytes[i] ^ kb[i % kb.length]) & 0xff;
+      return out;
+    }
+    function rc4(bytes, key) {
+      const S = new Array(256);
+      for (let i = 0; i < 256; i++) S[i] = i;
+      const kb = [];
+      for (let i = 0; i < key.length; i++) kb.push(typeof key === "string" ? key.charCodeAt(i) & 0xff : key[i] & 0xff);
+      if (!kb.length) kb.push(0);
+      let j = 0;
+      for (let i = 0; i < 256; i++) {
+        j = (j + S[i] + kb[i % kb.length]) & 0xff;
+        const t = S[i]; S[i] = S[j]; S[j] = t;
+      }
+      let i = 0; j = 0;
+      const out = new Array(bytes.length);
+      for (let n = 0; n < bytes.length; n++) {
+        i = (i + 1) & 0xff;
+        j = (j + S[i]) & 0xff;
+        const t = S[i]; S[i] = S[j]; S[j] = t;
+        out[n] = (bytes[n] ^ S[(S[i] + S[j]) & 0xff]) & 0xff;
+      }
+      return out;
+    }
+    function vigenere(bytes, key, dec) {
+      const kb = [];
+      for (let i = 0; i < key.length; i++) kb.push(key.charCodeAt(i) & 0xff);
+      if (!kb.length) return bytes;
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        const k = kb[i % kb.length];
+        out[i] = dec ? ((bytes[i] - k + 256) & 0xff) : ((bytes[i] + k) & 0xff);
+      }
+      return out;
+    }
+    function deltaDecode(bytes) {
+      if (!bytes.length) return bytes;
+      const out = new Array(bytes.length);
+      out[0] = bytes[0];
+      for (let i = 1; i < bytes.length; i++) out[i] = (bytes[i] + out[i - 1]) & 0xff;
+      return out;
+    }
+    function undelta(bytes) {
+      if (!bytes.length) return bytes;
+      const out = new Array(bytes.length);
+      out[0] = bytes[0];
+      for (let i = 1; i < bytes.length; i++) out[i] = (bytes[i] - bytes[i - 1] + 256) & 0xff;
+      return out;
+    }
+    function bitRotate(bytes, n, left) {
+      n &= 7;
+      const out = new Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i];
+        out[i] = left ? (((b << n) | (b >>> (8 - n))) & 0xff) : (((b >>> n) | (b << (8 - n))) & 0xff);
+      }
+      return out;
+    }
+    function ascii85Decode(bytes) {
+      try {
+        let s = bytesToLatin1(bytes).replace(/\s+/g, "");
+        if (s.charAt(0) === "<" && s.charAt(1) === "~") s = s.slice(2);
+        if (s.slice(-2) === "~>") s = s.slice(0, -2);
+        if (s.length < 2) return null;
+        const out = [];
+        let i = 0;
+        while (i < s.length) {
+          if (s[i] === "z") { out.push(0,0,0,0); i++; continue; }
+          let chunk = s.substr(i, 5);
+          if (chunk.length < 2) break;
+          const pad = 5 - chunk.length;
+          while (chunk.length < 5) chunk += "u";
+          let v = 0;
+          for (let k = 0; k < 5; k++) {
+            const c = chunk.charCodeAt(k) - 33;
+            if (c < 0 || c > 84) { v = -1; break; }
+            v = v * 85 + c;
+          }
+          if (v < 0) break;
+          out.push((v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff);
+          for (let p = 0; p < pad; p++) out.pop();
+          i += 5 - pad;
+        }
+        return out.length ? out : null;
+      } catch (e) { return null; }
+    }
+    function base32Decode(bytes) {
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+      const map = Object.create(null);
+      for (let i = 0; i < 32; i++) map[alphabet[i]] = i;
+      let s = bytesToLatin1(bytes).toUpperCase().replace(/[^A-Z2-7=]/g, "");
+      if (s.length < 2) return null;
+      const out = [];
+      let bits = 0, val = 0;
+      for (let i = 0; i < s.length; i++) {
+        if (s[i] === "=") break;
+        const c = map[s[i]];
+        if (c == null) continue;
+        val = (val << 5) | c;
+        bits += 5;
+        if (bits >= 8) {
+          out.push((val >>> (bits - 8)) & 0xff);
+          bits -= 8;
+        }
+      }
+      return out.length ? out : null;
+    }
+    function zzlibLikeInflateStub(bytes) {
+      // not full inflate — just strip zlib/gzip headers if present and return payload tail attempt
+      if (bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) return bytes.slice(10);
+      if (bytes.length > 2 && bytes[0] === 0x78 && (bytes[1] === 0x01 || bytes[1] === 0x9c || bytes[1] === 0xda)) return bytes.slice(2);
+      return null;
+    }
+    function tryJsonUnwrap(bytes) {
+      const s = bytesToLatin1(bytes).trim();
+      if (s.charAt(0) !== "{" && s.charAt(0) !== "[") return null;
+      try {
+        const j = JSON.parse(s);
+        if (typeof j === "string") {
+          const b = [];
+          for (let i = 0; i < j.length; i++) b.push(j.charCodeAt(i) & 0xff);
+          return b;
+        }
+        if (j && typeof j === "object") {
+          for (const k of ["data", "payload", "script", "code", "src", "content", "body"]) {
+            if (typeof j[k] === "string") {
+              const b = [];
+              for (let i = 0; i < j[k].length; i++) b.push(j[k].charCodeAt(i) & 0xff);
+              return b;
+            }
+          }
+        }
+      } catch (e) {}
+      return null;
+    }
+
     consider(rawBytes, "raw");
     consider(subBytes(rawBytes, 1), "add1");
     consider(subBytes(rawBytes, -1), "sub1");
@@ -2578,6 +2743,54 @@ print("__VM_FINISHED__")
     }
     for (const seed of [57, 1337, 0xC0FFEE]) {
       consider(prometheusPrngDecrypt(rawBytes, seed, 57, 1), "prng57");
+    }
+
+    
+    // --- god-mode candidate sweep ---
+    consider(revBytes(rawBytes), "rev");
+    consider(bitNot(rawBytes), "not");
+    for (const k of [0x00,0x01,0x13,0x37,0x55,0x5a,0xa5,0xff,0x42,0x69,0xde,0xad,0xbe,0xef,0x7f,0x80,0xcc,0x33]) {
+      consider(xorConst(rawBytes, k), "xor" + k.toString(16));
+    }
+    for (const seed of [1, 7, 13, 57, 131, 0x55, rawBytes.length & 0xff, (index || 0) & 0xff]) {
+      consider(xorRolling(rawBytes, seed, 131, 7), "roll131");
+      consider(xorRolling(rawBytes, seed, 57, 1), "roll57");
+      consider(xorRolling(rawBytes, seed, 1664525 & 0xff, 1013904223 & 0xff), "rollLCG");
+    }
+    for (const key of ["key", "Key", "KEY", "moon", "MoonSec", "luraph", "Luraph", "prometheus", "secret", "roblox", "Synapse", "script", "encrypt", "decrypt", "password", "123456", "admin"]) {
+      consider(xorKeyStr(rawBytes, key), "xorkey");
+      consider(rc4(rawBytes, key), "rc4");
+      consider(vigenere(rawBytes, key, true), "vig");
+    }
+    for (const key of [[0xde,0xad,0xbe,0xef],[0x13,0x37],[0x4d,0x53,0x56,0x33],[0x6c,0x75,0x72,0x61],[0xff,0x00],[0x01,0x02,0x03,0x04]]) {
+      consider(xorKeyStr(rawBytes, String.fromCharCode.apply(null, key)), "xork");
+      consider(rc4(rawBytes, key), "rc4b");
+    }
+    consider(deltaDecode(rawBytes), "delta");
+    consider(undelta(rawBytes), "undelta");
+    for (const n of [1,2,3,4,5,7]) {
+      consider(bitRotate(rawBytes, n, true), "rol" + n);
+      consider(bitRotate(rawBytes, n, false), "ror" + n);
+    }
+    const a85 = ascii85Decode(rawBytes);
+    if (a85) consider(a85, "a85");
+    const b32 = base32Decode(rawBytes);
+    if (b32) consider(b32, "b32");
+    const z = zzlibLikeInflateStub(rawBytes);
+    if (z) consider(z, "zlibhdr");
+    const ju = tryJsonUnwrap(rawBytes);
+    if (ju) consider(ju, "json");
+    // layered: b64 then xor/rc4
+    const b64b = typeof b64Decode === "function" ? b64Decode(rawBytes) : null;
+    if (b64b) {
+      for (const k of [0x13, 0x37, 0x55, 0xff]) consider(xorConst(b64b, k), "b64+xor");
+      for (const key of ["key", "MoonSec", "luraph", "secret"]) {
+        consider(rc4(b64b, key), "b64+rc4");
+        consider(xorKeyStr(b64b, key), "b64+xorkey");
+      }
+      consider(revBytes(b64b), "b64+rev");
+      const a2 = ascii85Decode(b64b);
+      if (a2) consider(a2, "b64+a85");
     }
 
     candidates.sort((a, b) => b.score - a.score);
@@ -3930,6 +4143,192 @@ print("__VM_FINISHED__")
       }
     }
     return src;
+  };
+
+  
+  // ===== Extra obfuscator fingerprints & static paths =====
+  function detectObfuscatorEx(src) {
+    const base = typeof detectObfuscator === "function" ? detectObfuscator(src) : { id: "unknown", label: "Unknown", confidence: 0 };
+    const s = (src || "").slice(0, 12000);
+    if (base.confidence >= 0.85) return base;
+    if (/Protected by MoonSec|MoonSec V/i.test(s)) return { id: "moonsec", label: "MoonSec V3+", confidence: 0.99, version: "3+" };
+    if (/PSU\s*\|?\s*Protected|PSU_OBFUSCATE|Pandora/i.test(s)) return { id: "psu", label: "PSU / Pandora", confidence: 0.9 };
+    if (/Shadow\s*VM|ShadowObfuscator|__SHADOW/i.test(s)) return { id: "shadow", label: "Shadow", confidence: 0.85 };
+    if (/Synapse|syn_loadstring|is_synapse_function/i.test(s) && /return\s*\(\s*function/.test(s)) return { id: "generic", label: "Synapse-style wrap", confidence: 0.6 };
+    if (/Aztup|AztupBrew|AZTUP/i.test(s)) return { id: "ironbrew", label: "AztupBrew / IB family", confidence: 0.8 };
+    if (/Bytecode|LBI_|OP_LOADK|proto\.code/i.test(s)) return { id: "generic", label: "Bytecode VM", confidence: 0.7 };
+    if (/\bload\s*\(\s*string\.dump|\bstring\.dump\s*\(/.test(s)) return { id: "generic", label: "string.dump loader", confidence: 0.65 };
+    // simple multi-layer base64 / hex wrappers
+    if (/^[\s\n]*return\s*\(?\s*load(?:string)?\s*\(\s*['\"]/.test(s) || /loadstring\s*\(\s*game:HttpGet/.test(s)) {
+      return { id: "generic", label: "loadstring wrapper", confidence: 0.75 };
+    }
+    return base;
+  }
+
+  function peelSimpleWrappers(src) {
+    let s = stripBomAndNoise(src || "");
+    let changed = true;
+    let rounds = 0;
+    while (changed && rounds < 8) {
+      changed = false;
+      rounds++;
+      // loadstring([[...]]) or loadstring("...")
+      let m = s.match(/^(?:\s*return\s*)?load(?:string)?\s*\(\s*\[\[([\s\S]*?)\]\]\s*\)\s*\(?\s*\)?\s*$/);
+      if (m) { s = m[1]; changed = true; continue; }
+      m = s.match(/^(?:\s*return\s*)?load(?:string)?\s*\(\s*\[=\[([\s\S]*?)\]=\]\s*\)\s*\(?\s*\)?\s*$/);
+      if (m) { s = m[1]; changed = true; continue; }
+      // base64 loadstring
+      m = s.match(/load(?:string)?\s*\(\s*(?:\(?\s*)?(?:game:GetService\s*\(\s*["']HttpService["']\s*\)\s*:Base64Decode|crypt\.base64decode|base64\.decode|syn\.crypt\.base64\.decode)\s*\(\s*["']([A-Za-z0-9+\/=\s]+)["']\s*\)/i);
+      if (m) {
+        try {
+          const raw = m[1].replace(/\s+/g, "");
+          const bin = atob(raw);
+          s = bin;
+          changed = true;
+          continue;
+        } catch (e) {}
+      }
+      // pure base64 blob
+      m = s.match(/^\s*([A-Za-z0-9+\/=\n\r]{80,})\s*$/);
+      if (m) {
+        try {
+          const bin = atob(m[1].replace(/\s+/g, ""));
+          if (/function|local |return /.test(bin)) { s = bin; changed = true; continue; }
+        } catch (e) {}
+      }
+      // hex string blob
+      m = s.match(/^\s*((?:[0-9a-fA-F]{2}){40,})\s*$/);
+      if (m) {
+        const hx = m[1];
+        let out = "";
+        for (let i = 0; i < hx.length; i += 2) out += String.fromCharCode(parseInt(hx.substr(i, 2), 16));
+        if (/function|local |return /.test(out)) { s = out; changed = true; continue; }
+      }
+      // MoonSec-style already handled elsewhere
+    }
+    return s;
+  }
+
+  // Universal multi-pass static when not Luraph/MoonSec specialized
+  function runUniversalStatic(src) {
+    results = [];
+    logEl.innerHTML = "";
+    document.body.classList.add("busy");
+    setBar(5);
+    const info = detectObfuscatorEx(src);
+    setObfBadge(info);
+    log("universal static — " + info.label, "info");
+    let body = peelSimpleWrappers(src);
+    if (body !== src) {
+      log("peeled simple wrapper(s) → " + body.length + " chars", "ok");
+      setCleanSource(body);
+      lastCleanSource = body;
+      window.__LAST_PAYLOAD = body;
+    }
+    setBar(15);
+    // harvest all string-like literals + long printable runs
+    const lits = [];
+    const re = /"((?:\\[0-9]{1,3}|\\x[0-9a-fA-F]{2}|[^"\\]){4,})"|'((?:\\[0-9]{1,3}|\\x[0-9a-fA-F]{2}|[^'\\]){4,})'|\[\[([\s\S]{4,}?)\]\]/g;
+    let m;
+    while ((m = re.exec(body))) {
+      const raw = m[1] || m[2] || m[3] || "";
+      const bytes = [];
+      if (m[3] != null) {
+        for (let i = 0; i < raw.length; i++) bytes.push(raw.charCodeAt(i) & 0xff);
+      } else {
+        let i = 0;
+        while (i < raw.length) {
+          if (raw[i] === "\\" && i + 1 < raw.length) {
+            if (raw[i+1] >= "0" && raw[i+1] <= "9") {
+              let d = raw[i+1], j = i+2;
+              if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") { d += raw[j++]; if (j < raw.length && raw[j] >= "0" && raw[j] <= "9") d += raw[j++]; }
+              bytes.push(parseInt(d,10) & 0xff); i = j; continue;
+            }
+            if (raw[i+1] === "x" && i+3 < raw.length) { bytes.push(parseInt(raw.substr(i+2,2),16)); i += 4; continue; }
+            bytes.push(raw.charCodeAt(i+1) & 0xff); i += 2; continue;
+          }
+          bytes.push(raw.charCodeAt(i) & 0xff); i++;
+        }
+      }
+      if (bytes.length >= 3) lits.push(bytes);
+    }
+    // also long base64-looking tokens outside quotes
+    const b64re = /[A-Za-z0-9+\/]{40,}={0,2}/g;
+    while ((m = b64re.exec(body))) {
+      const bytes = [];
+      for (let i = 0; i < m[0].length; i++) bytes.push(m[0].charCodeAt(i) & 0xff);
+      lits.push(bytes);
+    }
+    log("universal literals: " + lits.length, "info");
+    setBar(30);
+    let juicy = 0;
+    const decoded = [];
+    const pMap = typeof extractPTable === "function" ? extractPTable(body) : null;
+    for (let i = 0; i < lits.length && i < 4000; i++) {
+      let best;
+      if (typeof decryptOne === "function") {
+        best = decryptOne(lits[i], pMap, i);
+      } else {
+        best = { str: bytesToLatin1(lits[i]), score: 0, method: "raw" };
+      }
+      if (!best) continue;
+      const isJ = JUICY_RE.test(best.str);
+      if (isJ) juicy++;
+      decoded.push({ index: decoded.length + 1, str: best.str, score: best.score, method: best.method, juicy: isJ, junk: best.score < 20 });
+      if (i % 40 === 0) setBar(30 + (60 * i) / Math.min(lits.length, 4000));
+    }
+    results = decoded;
+    setStats({ Dec: decoded.length, J: juicy, C: lits.length, Sh: info.id, P: pMap ? "Y" : "—" });
+    setBar(100);
+    log("universal done — " + decoded.length + " / juicy " + juicy, "ok");
+    document.body.classList.remove("busy");
+    render();
+    if ($("#btnExport")) $("#btnExport").disabled = false;
+    if ($("#btnExportJson")) $("#btnExportJson").disabled = false;
+    if ($("#btnReport")) $("#btnReport").disabled = false;
+  }
+
+  // Upgrade routeByObfuscator
+  if (typeof routeByObfuscator === "function") {
+    const _route = routeByObfuscator;
+    routeByObfuscator = function(src) {
+      const info = detectObfuscatorEx(src);
+      setObfBadge(info);
+      window.__OBF_INFO = info;
+      log("detector: " + info.label + " (" + info.confidence + ")", "info");
+      if (info.id === "moonsec") {
+        runMoonSecStatic(src);
+        return true;
+      }
+      if (info.id === "wad") {
+        // leave to WAD button or auto
+        if (typeof runWeAreDevs === "function") {
+          runWeAreDevs(src);
+          return true;
+        }
+      }
+      if (info.id === "luraph") {
+        return false; // existing Luraph static in run()
+      }
+      // everything else → universal
+      if (info.id === "psu" || info.id === "shadow" || info.id === "ironbrew" || info.id === "generic") {
+        runUniversalStatic(src);
+        return true;
+      }
+      return _route(src);
+    };
+  }
+
+  // Preprocess also peels simple wrappers for chain
+  const _pre = window.__preprocessStage;
+  window.__preprocessStage = function(src) {
+    let s = _pre ? _pre(src) : src;
+    const peeled = peelSimpleWrappers(s);
+    if (peeled && peeled !== s && peeled.length > 20) {
+      log("stage peel wrapper → " + peeled.length + " chars", "ok");
+      return peeled;
+    }
+    return s;
   };
 
   setTimeout(() => {
