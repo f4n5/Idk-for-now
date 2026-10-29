@@ -887,7 +887,7 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <div class="console-toolbar">
         <button class="primary" id="btnConRun">Run</button>
         <button class="vm" id="btnConClear">Clear Output</button>
-        <button id="btnConClean">Clean</button>
+        <button id="btnConClean">Clear</button>
         <button id="btnConSample">Sample</button>
         <button id="btnConFromClean" title="Load last clean payload">Load Clean Payload</button>
         <label style="font-size:0.75rem;color:var(--muted)"><input type="checkbox" id="conMocks" checked> Roblox/exploit mocks</label>
@@ -4880,14 +4880,35 @@ end
   }
 
 function cleanConsole() {
-    if ($("#conIn")) $("#conIn").value = "";
-    if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleaned</div>';
+    try {
+      const tin = $("#conIn");
+      if (tin) tin.value = "";
+      const tout = $("#conOut");
+      if (tout) tout.innerHTML = '<div class="line-info">cleared</div>';
+      conPrint("ready — fengari sandbox", "info");
+    } catch (e) {
+      console.error(e);
+    }
   }
 
 if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   if ($("#btnConClear")) $("#btnConClear").addEventListener("click", () => {
     if ($("#conOut")) $("#conOut").innerHTML = '<div class="line-info">cleared</div>';
   });
+  if ($("#btnConClean")) $("#btnConClean").addEventListener("click", cleanConsole);
+  
+  // hard-bind Clear (code+output)
+  (function bindConClean() {
+    const b = document.getElementById("btnConClean");
+    if (b && !b.dataset.bound) {
+      b.dataset.bound = "1";
+      b.addEventListener("click", function (e) {
+        e.preventDefault();
+        cleanConsole();
+      });
+    }
+  })();
+
   if ($("#btnConSample")) $("#btnConSample").addEventListener("click", () => {
     if ($("#conIn")) $("#conIn").value = "print('ShivLab console')\nprint(1+2*3)\nloadstring(\"print('nested loadstring')\")()\nprint(identifyexecutor and identifyexecutor() or 'no executor')\n";
   });
