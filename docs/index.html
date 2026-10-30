@@ -1431,6 +1431,26 @@ textarea:focus {
   line-height: 1.2;
 }
 
+
+.con-screen .rbx-text-node {
+  position: absolute !important;
+  left: 0 !important; right: 0 !important; top: 0 !important; bottom: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  z-index: 20 !important;
+  color: #ffffff !important;
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  pointer-events: none !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.con-screen .rbx-textbutton,
+.con-screen .rbx-textlabel {
+  overflow: visible !important;
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -6013,6 +6033,24 @@ end
         conPrint(err, "err");
       } else {
         conPrint("ok", "ok");
+        try {
+          const sc = document.getElementById("conScreen");
+          if (sc) {
+            sc.querySelectorAll("[title]").forEach((el) => {
+              const tx = el.getAttribute("title") || "";
+              if (!tx) return;
+              if (!el.__textNode) {
+                const s = document.createElement("span");
+                s.className = "rbx-text-node";
+                el.appendChild(s);
+                el.__textNode = s;
+              }
+              el.__textNode.textContent = tx;
+            });
+            sc.classList.remove("empty");
+          }
+        } catch (e) {}
+
       }
     } catch (e) {
       conPrint(String(e && e.message ? e.message : e), "err");
@@ -6938,8 +6976,7 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       sc.appendChild(node);
     },
     makeEl(className, props) {
-      const tag = className.indexOf("textbutton") >= 0 ? "button" : "div";
-      const el = document.createElement(tag);
+      const el = document.createElement("div");
       el.className = "rbx-gui " + className;
       if (!props.Size) {
         // default so something visible appears
@@ -6955,10 +6992,15 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       if (p.Name) el.dataset.name = p.Name;
       if (p.Text != null) {
         const tx = String(p.Text);
-        el.textContent = tx;
+        if (!el.__textNode) {
+          const label = document.createElement("span");
+          label.className = "rbx-text-node";
+          label.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 8px;pointer-events:none;color:#fff;font-size:14px;font-weight:600;z-index:5;";
+          el.appendChild(label);
+          el.__textNode = label;
+        }
+        el.__textNode.textContent = tx;
         el.setAttribute("title", tx);
-        if (!el.style.fontSize) el.style.fontSize = "14px";
-        if (!el.style.color) el.style.color = "#fff";
       }
       if (p.TextSize != null) el.style.fontSize = Number(p.TextSize) + "px";
       if (p.BackgroundColor3) {
@@ -7011,6 +7053,23 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   const __uiNodes = {};
   window.handleUiCap = function handleUiCap(line) {
     if (!line || typeof line !== "string") return false;
+    if (line.indexOf("__UI_TEXT__") === 0) {
+      const parts = line.split("|");
+      const id = parts[1], prop = parts[2], tx = parts.slice(3).join("|");
+      const el = (window.__uiNodes || {})[id];
+      if (el) {
+        if (!el.__textNode) {
+          const s = document.createElement("span");
+          s.className = "rbx-text-node";
+          el.appendChild(s);
+          el.__textNode = s;
+        }
+        el.__textNode.textContent = tx;
+        el.setAttribute("title", tx);
+        if (prop === "Name") el.dataset.name = tx;
+      }
+      return true;
+    }
     if (line.indexOf("__UI_NEW__") === 0) {
       const parts = line.split("|");
       const cls = parts[1] || "Frame";
@@ -7059,8 +7118,15 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       try { val = JSON.parse(raw); } catch (e) {}
       if (prop === "Text" || prop === "PlaceholderText") {
         const tx = (val == null) ? "" : String(val);
-        if (el.__textNode) el.__textNode.textContent = tx;
-        else el.textContent = tx;
+        if (!el.__textNode) {
+          const label = document.createElement("span");
+          label.className = "rbx-text-node";
+          label.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 8px;color:#fff;font-size:14px;font-weight:700;z-index:9;pointer-events:none;";
+          el.appendChild(label);
+          el.__textNode = label;
+        }
+        el.__textNode.textContent = tx;
+        el.__textNode.style.color = el.__textNode.style.color || "#ffffff";
         el.setAttribute("title", tx);
         return true;
       }
@@ -7401,7 +7467,7 @@ local function __ui_proxy(className, id)
         print("__UI_SET__|"..id.."|"..k.."|"..__enc_c3(v)); return
       end
       if k == "Text" or k == "Name" or k == "Image" or k == "PlaceholderText" or k == "FontFace" then
-        print("__UI_SET__|"..id.."|"..k..'|"'..__esc(v)..'"'); return
+        print("__UI_TEXT__|"..id.."|"..k.."|"..tostring(v or "")); return
       end
       if k == "BackgroundTransparency" or k == "TextTransparency" or k == "TextSize" or k == "ZIndex" or k == "BorderSizePixel" or k == "LayoutOrder" or k == "TextStrokeTransparency" or k == "ImageTransparency" or k == "Rotation" then
         print("__UI_SET__|"..id.."|"..k.."|"..__jn(v)); return
