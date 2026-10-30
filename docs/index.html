@@ -1290,6 +1290,100 @@ textarea:focus {
   background-position: center;
 }
 
+
+.con-screen {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  background:
+    radial-gradient(ellipse at 30% 20%, rgba(80,120,255,0.07), transparent 50%),
+    linear-gradient(180deg, #2b2f3a 0%, #1a1d26 40%, #12141b 100%);
+  overflow: hidden;
+  image-rendering: auto;
+}
+.con-screen::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 20px 20px;
+  pointer-events: none;
+  opacity: 0.35;
+}
+.con-screen .rbx-gui { position: absolute; box-sizing: border-box; }
+.con-screen .rbx-screen {
+  position: absolute !important;
+  left: 0 !important; top: 0 !important;
+  width: 100% !important; height: 100% !important;
+  background: transparent !important;
+  border: none !important;
+  pointer-events: none;
+}
+.con-screen .rbx-screen > * { pointer-events: auto; }
+.con-screen .rbx-frame {
+  background: rgb(35, 37, 43);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 2px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.35);
+}
+.con-screen .rbx-textlabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Gotham SSm", "Segoe UI", var(--sans), sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #f5f5f5;
+  padding: 2px 6px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  white-space: pre-wrap;
+  overflow: hidden;
+}
+.con-screen .rbx-textbutton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Gotham SSm", "Segoe UI", var(--sans), sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  padding: 4px 10px;
+  text-align: center;
+  background: rgb(0, 170, 255);
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.15) inset;
+  cursor: pointer;
+}
+.con-screen .rbx-textbutton:hover { filter: brightness(1.08); }
+.con-screen .rbx-scrollingframe {
+  background: rgb(25, 27, 32);
+  border: 1px solid rgba(255,255,255,0.08);
+  overflow: auto;
+}
+.con-screen .rbx-image {
+  background-color: rgba(255,255,255,0.05);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  border: none;
+}
+.con-screen .rbx-textbox {
+  background: rgb(20, 22, 28);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 4px;
+  color: #eee;
+  font-family: var(--sans);
+  font-size: 14px;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -5734,7 +5828,12 @@ print("__VM_FINISHED__")
               }
             } catch (e) { parts.push("?"); }
           }
-          conPrint(parts.join("\t"), "print");
+          const msg = parts.join("\t");
+          if (msg.indexOf("__UI_") === 0 && typeof handleUiCap === "function") {
+            handleUiCap(msg);
+            return 0;
+          }
+          conPrint(msg, "print");
           return 0;
         });
         lua.lua_setglobal(L, to_luastring("print"));
@@ -6795,8 +6894,15 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       sc.appendChild(node);
     },
     makeEl(className, props) {
-      const el = document.createElement("div");
+      const tag = className.indexOf("textbutton") >= 0 ? "button" : "div";
+      const el = document.createElement(tag);
       el.className = "rbx-gui " + className;
+      if (!props.Size) {
+        // default so something visible appears
+        if (className.indexOf("frame") >= 0) {
+          el.style.width = "120px"; el.style.height = "80px";
+        }
+      }
       this.applyProps(el, props || {});
       return el;
     },
@@ -6843,7 +6949,7 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   // __UI_SET__|id|prop|jsonValue
   // __UI_PARENT__|id|parentId
   const __uiNodes = {};
-  function handleUiCap(line) {
+  window.handleUiCap = function handleUiCap(line) {
     if (line.indexOf("__UI_NEW__") === 0) {
       const parts = line.split("|");
       const cls = parts[1] || "Frame";
@@ -6852,9 +6958,11 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       const c = cls.toLowerCase();
       if (c === "textlabel") className = "rbx-textlabel";
       else if (c === "textbutton") className = "rbx-textbutton";
+      else if (c === "textbox") className = "rbx-textbox";
       else if (c === "scrollingframe") className = "rbx-scrollingframe";
       else if (c === "imagelabel" || c === "imagebutton") className = "rbx-image";
-      else if (c === "screengui") className = "rbx-gui rbx-screen";
+      else if (c === "screengui" || c === "billboardgui" || c === "surfacegui") className = "rbx-gui rbx-screen";
+      else if (c === "frame" || c === "canvasgroup") className = "rbx-frame";
       const el = window.__SHIV_UI.makeEl(className, { Name: cls });
       el.dataset.uid = id;
       el.dataset.cls = cls;
