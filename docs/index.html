@@ -1211,6 +1211,85 @@ textarea:focus {
   min-width: 140px;
 }
 
+
+/* console UI screen preview */
+.con-screen-wrap {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+  background: #0a0e16;
+}
+.con-screen-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel2, #141c2c);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.con-screen {
+  position: relative;
+  width: 100%;
+  height: 280px;
+  background:
+    linear-gradient(180deg, #1a1f2e 0%, #12151f 100%);
+  overflow: hidden;
+}
+.con-screen.empty::after {
+  content: "no ScreenGui yet — Instance.new('ScreenGui') will show here";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  pointer-events: none;
+}
+.con-screen .rbx-gui {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.con-screen .rbx-frame {
+  background: rgba(30, 30, 36, 0.92);
+  border: 1px solid rgba(255,255,255,0.08);
+}
+.con-screen .rbx-textlabel,
+.con-screen .rbx-textbutton {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--sans);
+  font-size: 14px;
+  color: #eee;
+  padding: 4px 8px;
+  text-align: center;
+}
+.con-screen .rbx-textbutton {
+  background: #3d5afe;
+  border-radius: 4px;
+  cursor: default;
+  border: none;
+}
+.con-screen .rbx-scrollingframe {
+  background: rgba(20,20,28,0.9);
+  overflow: auto;
+}
+.con-screen .rbx-image {
+  background: rgba(255,255,255,0.06);
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -1481,6 +1560,13 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
           <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">OUTPUT</h2>
           <div class="console-out" id="conOut"><div class="line-info">ready — fengari sandbox</div></div>
         </div>
+      </div>
+      <div class="con-screen-wrap">
+        <div class="con-screen-head">
+          <span>Screen preview</span>
+          <button type="button" id="btnConScreenClear" style="font-size:0.7rem;padding:3px 8px">Clear UI</button>
+        </div>
+        <div class="con-screen empty" id="conScreen"></div>
       </div>
     </div>
   </div>
@@ -5772,6 +5858,7 @@ if not bit32 then
 end
 `
       }
+      if (useMocks && window.__SHIV_UI_BOOT) boot += "\n" + window.__SHIV_UI_BOOT;
       const full = boot + "\n" + code;
       const status = lauxlib.luaL_dostring(L, to_luastring(full));
       if (status !== 0 && status !== undefined) {
@@ -5790,6 +5877,8 @@ end
   }
 
 function cleanConsole() {
+    try { if (window.__SHIV_UI) window.__SHIV_UI.clear(); } catch (e) {}
+
     try {
       const tin = $("#conIn");
       if (tin) tin.value = "";
@@ -6674,6 +6763,259 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     if ($("#edCode")) { $("#edCode").value = ED_TEMPLATES[k]; edSync(); }
     $("#edTemplate").value = "";
   });
+
+  
+  // ===== Console ScreenGui preview =====
+  window.__SHIV_UI = {
+    roots: [],
+    clear() {
+      const sc = document.getElementById("conScreen");
+      if (!sc) return;
+      sc.innerHTML = "";
+      sc.classList.add("empty");
+      this.roots = [];
+    },
+    scale: { x: 1, y: 1 },
+    udim2ToPx(ud, axisSize) {
+      // ud = { xs, xo, ys, yo } scale/offset
+      if (!ud) return { w: 0, h: 0, x: 0, y: 0 };
+      const W = (document.getElementById("conScreen") || {}).clientWidth || 400;
+      const H = (document.getElementById("conScreen") || {}).clientHeight || 280;
+      return {
+        x: (ud.xs || 0) * W + (ud.xo || 0),
+        y: (ud.ys || 0) * H + (ud.yo || 0),
+        w: (ud.ws != null ? ud.ws : ud.xs2 != null ? ud.xs2 : 0) * W + (ud.wo != null ? ud.wo : ud.xo2 != null ? ud.xo2 : 0),
+        h: (ud.hs != null ? ud.hs : ud.ys2 != null ? ud.ys2 : 0) * H + (ud.ho != null ? ud.ho : ud.yo2 != null ? ud.yo2 : 0)
+      };
+    },
+    mount(node) {
+      const sc = document.getElementById("conScreen");
+      if (!sc || !node) return;
+      sc.classList.remove("empty");
+      sc.appendChild(node);
+    },
+    makeEl(className, props) {
+      const el = document.createElement("div");
+      el.className = "rbx-gui " + className;
+      this.applyProps(el, props || {});
+      return el;
+    },
+    applyProps(el, p) {
+      if (!el || !p) return;
+      if (p.Name) el.dataset.name = p.Name;
+      if (p.Text != null) el.textContent = String(p.Text);
+      if (p.BackgroundColor3) {
+        const c = p.BackgroundColor3;
+        if (c && c.r != null) el.style.background = "rgb(" + Math.round(c.r*255) + "," + Math.round(c.g*255) + "," + Math.round(c.b*255) + ")";
+      }
+      if (p.TextColor3) {
+        const c = p.TextColor3;
+        if (c && c.r != null) el.style.color = "rgb(" + Math.round(c.r*255) + "," + Math.round(c.g*255) + "," + Math.round(c.b*255) + ")";
+      }
+      if (p.BackgroundTransparency != null) el.style.opacity = String(1 - Number(p.BackgroundTransparency));
+      if (p.Visible === false) el.style.display = "none";
+      if (p.Size) {
+        const W = (document.getElementById("conScreen") || {}).clientWidth || 400;
+        const H = (document.getElementById("conScreen") || {}).clientHeight || 280;
+        const s = p.Size;
+        const w = (s.xs || 0) * W + (s.xo || 0);
+        const h = (s.ys || 0) * H + (s.yo || 0);
+        el.style.width = Math.max(0, w) + "px";
+        el.style.height = Math.max(0, h) + "px";
+      }
+      if (p.Position) {
+        const W = (document.getElementById("conScreen") || {}).clientWidth || 400;
+        const H = (document.getElementById("conScreen") || {}).clientHeight || 280;
+        const s = p.Position;
+        const x = (s.xs || 0) * W + (s.xo || 0);
+        const y = (s.ys || 0) * H + (s.yo || 0);
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+      }
+      if (p.Image) {
+        el.style.backgroundImage = "url(" + JSON.stringify(String(p.Image).replace(/^rbxassetid:\/\//, "https://www.roblox.com/asset/?id=")) + ")";
+      }
+    }
+  };
+
+  // Lua → JS UI protocol via print tags (reliable across fengari)
+  // __UI_NEW__|Class|id
+  // __UI_SET__|id|prop|jsonValue
+  // __UI_PARENT__|id|parentId
+  const __uiNodes = {};
+  function handleUiCap(line) {
+    if (line.indexOf("__UI_NEW__") === 0) {
+      const parts = line.split("|");
+      const cls = parts[1] || "Frame";
+      const id = parts[2] || ("n" + Math.random());
+      let className = "rbx-frame";
+      const c = cls.toLowerCase();
+      if (c === "textlabel") className = "rbx-textlabel";
+      else if (c === "textbutton") className = "rbx-textbutton";
+      else if (c === "scrollingframe") className = "rbx-scrollingframe";
+      else if (c === "imagelabel" || c === "imagebutton") className = "rbx-image";
+      else if (c === "screengui") className = "rbx-gui rbx-screen";
+      const el = window.__SHIV_UI.makeEl(className, { Name: cls });
+      el.dataset.uid = id;
+      el.dataset.cls = cls;
+      if (c === "screengui") {
+        el.style.position = "absolute";
+        el.style.left = "0"; el.style.top = "0";
+        el.style.width = "100%"; el.style.height = "100%";
+        el.style.background = "transparent";
+        el.style.border = "none";
+        window.__SHIV_UI.mount(el);
+      }
+      __uiNodes[id] = el;
+      return true;
+    }
+    if (line.indexOf("__UI_SET__") === 0) {
+      const parts = line.split("|");
+      const id = parts[1], prop = parts[2], raw = parts.slice(3).join("|");
+      const el = __uiNodes[id];
+      if (!el) return true;
+      let val = raw;
+      try { val = JSON.parse(raw); } catch (e) {}
+      const p = {};
+      p[prop] = val;
+      window.__SHIV_UI.applyProps(el, p);
+      return true;
+    }
+    if (line.indexOf("__UI_PARENT__") === 0) {
+      const parts = line.split("|");
+      const id = parts[1], pid = parts[2];
+      const el = __uiNodes[id];
+      if (!el) return true;
+      if (!pid || pid === "nil" || pid === "screen") {
+        window.__SHIV_UI.mount(el);
+      } else if (__uiNodes[pid]) {
+        __uiNodes[pid].appendChild(el);
+        const sc = document.getElementById("conScreen");
+        if (sc) sc.classList.remove("empty");
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Patch conPrint to intercept UI tags
+  if (typeof conPrint === "function") {
+    const _cp = conPrint;
+    conPrint = function(msg, cls) {
+      const s = String(msg);
+      if (s.indexOf("__UI_") === 0) {
+        handleUiCap(s);
+        return;
+      }
+      _cp(msg, cls);
+    };
+  }
+
+  if ($("#btnConScreenClear")) {
+    $("#btnConScreenClear").addEventListener("click", () => {
+      window.__SHIV_UI.clear();
+      for (const k of Object.keys(__uiNodes)) delete __uiNodes[k];
+    });
+  }
+
+  // Lua bootstrap snippet for UI (appended when mocks on)
+  window.__SHIV_UI_BOOT = String.raw`
+-- UI preview bridge
+local __uid = 0
+local function __uid_next()
+  __uid = __uid + 1
+  return "u" .. tostring(__uid)
+end
+local function __json_num(n)
+  if type(n) ~= "number" then return "0" end
+  return tostring(n)
+end
+local function __encode_udim2(u)
+  if type(u) ~= "table" then return '{"xs":0,"xo":0,"ys":0,"yo":0}' end
+  return '{"xs":'..__json_num(u.X and u.X.Scale or u.xs or 0)
+    ..',"xo":'..__json_num(u.X and u.X.Offset or u.xo or 0)
+    ..',"ys":'..__json_num(u.Y and u.Y.Scale or u.ys or 0)
+    ..',"yo":'..__json_num(u.Y and u.Y.Offset or u.yo or 0)..'}'
+end
+local function __encode_color3(c)
+  if type(c) ~= "table" then return '{"r":0.2,"g":0.2,"b":0.25}' end
+  return '{"r":'..__json_num(c.R or c.r or 0)..',"g":'..__json_num(c.G or c.g or 0)..',"b":'..__json_num(c.B or c.b or 0)..'}'
+end
+
+UDim2 = UDim2 or {}
+UDim2.new = UDim2.new or function(xs, xo, ys, yo)
+  return { X = { Scale = xs or 0, Offset = xo or 0 }, Y = { Scale = ys or 0, Offset = yo or 0 }, xs = xs or 0, xo = xo or 0, ys = ys or 0, yo = yo or 0 }
+end
+Color3 = Color3 or {}
+Color3.new = Color3.new or function(r,g,b) return { R = r or 0, G = g or 0, B = b or 0, r = r or 0, g = g or 0, b = b or 0 } end
+Color3.fromRGB = Color3.fromRGB or function(r,g,b) return Color3.new((r or 0)/255,(g or 0)/255,(b or 0)/255) end
+
+local function __ui_proxy(className, id)
+  local props = { ClassName = className, Name = className, Parent = nil }
+  local children = {}
+  local obj = {}
+  local mt = {
+    __index = function(_, k)
+      if k == "Parent" then return props.Parent end
+      if props[k] ~= nil then return props[k] end
+      if k == "FindFirstChild" or k == "WaitForChild" then
+        return function(_, name) return children[name] end
+      end
+      if k == "Destroy" then
+        return function() print("__UI_SET__|"..id.."|Visible|false") end
+      end
+      if k == "ClearAllChildren" then return function() end end
+      if k == "Clone" then return function() return __ui_proxy(className, __uid_next()) end end
+      return props[k]
+    end,
+    __newindex = function(_, k, v)
+      props[k] = v
+      if k == "Parent" then
+        local pid = "nil"
+        if type(v) == "table" and v.__uid then pid = v.__uid end
+        if type(v) == "table" then children[props.Name or className] = obj end
+        print("__UI_PARENT__|"..id.."|"..tostring(pid))
+        props.Parent = v
+        return
+      end
+      if k == "Size" or k == "Position" then
+        print("__UI_SET__|"..id.."|"..k.."|"..__encode_udim2(v))
+        return
+      end
+      if k == "BackgroundColor3" or k == "TextColor3" then
+        print("__UI_SET__|"..id.."|"..k.."|"..__encode_color3(v))
+        return
+      end
+      if k == "Text" or k == "Name" or k == "Image" then
+        local js = tostring(v):gsub('\\','\\\\'):gsub('"','\\"')
+        print("__UI_SET__|"..id.."|"..k..'|"'..js..'"')
+        return
+      end
+      if k == "BackgroundTransparency" or k == "TextTransparency" then
+        print("__UI_SET__|"..id.."|"..k.."|"..__json_num(v))
+        return
+      end
+      if k == "Visible" then
+        print("__UI_SET__|"..id.."|"..k.."|"..(v and "true" or "false"))
+        return
+      end
+    end
+  }
+  obj.__uid = id
+  setmetatable(obj, mt)
+  print("__UI_NEW__|"..className.."|"..id)
+  return obj
+end
+
+Instance = Instance or {}
+Instance.new = function(className, parent)
+  className = tostring(className or "Frame")
+  local id = __uid_next()
+  local o = __ui_proxy(className, id)
+  if parent then o.Parent = parent end
+  return o
+end
+`
 
   setTimeout(() => {
     const F = getFengari();
