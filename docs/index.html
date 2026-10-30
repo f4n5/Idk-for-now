@@ -1384,6 +1384,53 @@ textarea:focus {
   align-items: center;
 }
 
+
+.con-screen .rbx-frame {
+  position: absolute;
+  background: rgb(35, 37, 43);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
+  overflow: hidden;
+}
+.con-screen .rbx-textlabel {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", var(--sans), sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #f5f5f5;
+  padding: 0 8px;
+  text-align: center;
+  background: transparent;
+  border: none;
+  white-space: pre-wrap;
+  overflow: hidden;
+  line-height: 1.2;
+  box-sizing: border-box;
+}
+.con-screen .rbx-textbutton {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "Segoe UI", var(--sans), sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff !important;
+  padding: 0 10px;
+  text-align: center;
+  background: rgb(0, 170, 255);
+  border: none;
+  border-radius: 4px;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.2) inset;
+  cursor: pointer;
+  box-sizing: border-box;
+  line-height: 1.2;
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -6906,16 +6953,25 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     applyProps(el, p) {
       if (!el || !p) return;
       if (p.Name) el.dataset.name = p.Name;
-      if (p.Text != null) el.textContent = String(p.Text);
+      if (p.Text != null) { el.textContent = String(p.Text); el.setAttribute("title", String(p.Text)); }
       if (p.BackgroundColor3) {
         const c = p.BackgroundColor3;
-        if (c && c.r != null) el.style.background = "rgb(" + Math.round(c.r*255) + "," + Math.round(c.g*255) + "," + Math.round(c.b*255) + ")";
+        const r = c.r != null ? c.r : c.R, g = c.g != null ? c.g : c.G, b = c.b != null ? c.b : c.B;
+        if (r != null) el.style.backgroundColor = "rgb(" + Math.round(Number(r)*255) + "," + Math.round(Number(g)*255) + "," + Math.round(Number(b)*255) + ")";
       }
       if (p.TextColor3) {
         const c = p.TextColor3;
-        if (c && c.r != null) el.style.color = "rgb(" + Math.round(c.r*255) + "," + Math.round(c.g*255) + "," + Math.round(c.b*255) + ")";
+        const r = c.r != null ? c.r : c.R, g = c.g != null ? c.g : c.G, b = c.b != null ? c.b : c.B;
+        if (r != null) el.style.color = "rgb(" + Math.round(Number(r)*255) + "," + Math.round(Number(g)*255) + "," + Math.round(Number(b)*255) + ")";
       }
-      if (p.BackgroundTransparency != null) el.style.opacity = String(1 - Number(p.BackgroundTransparency));
+      if (p.BackgroundTransparency != null) {
+        const tr = Number(p.BackgroundTransparency);
+        if (tr >= 1) { el.style.backgroundColor = "transparent"; el.style.background = "transparent"; }
+        else if (tr > 0 && el.style.backgroundColor && el.style.backgroundColor.indexOf("rgb(") === 0) {
+          const mm = el.style.backgroundColor.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+          if (mm) el.style.backgroundColor = "rgba(" + mm[1] + "," + mm[2] + "," + mm[3] + "," + (1 - tr) + ")";
+        }
+      }
       if (p.Visible === false) el.style.display = "none";
       if (p.Size) {
         const W = (document.getElementById("conScreen") || {}).clientWidth || 400;
