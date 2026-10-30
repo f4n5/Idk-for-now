@@ -5829,8 +5829,8 @@ print("__VM_FINISHED__")
             } catch (e) { parts.push("?"); }
           }
           const msg = parts.join("\t");
-          if (msg.indexOf("__UI_") === 0 && typeof handleUiCap === "function") {
-            handleUiCap(msg);
+          if (msg.indexOf("__UI_") === 0 && typeof window.handleUiCap === "function") {
+            window.handleUiCap(msg);
             return 0;
           }
           conPrint(msg, "print");
@@ -5917,11 +5917,8 @@ end
 game = __callable()
 workspace = game
 script = { Name = "Script", Parent = game, Source = "" }
-Instance = { new = function() return __callable() end }
 Vector3 = { new = function(x,y,z) return {X=x or 0,Y=y or 0,Z=z or 0} end }
 CFrame = { new = function() return {} end }
-Color3 = { new = function() return {} end, fromRGB = function() return {} end }
-UDim2 = { new = function() return {} end }
 Enum = setmetatable({}, { __index = function() return setmetatable({}, { __index = function() return 0 end }) end })
 task = { wait = function() end, spawn = function(f) if type(f)=="function" then pcall(f) end end, defer = function(f) if type(f)=="function" then pcall(f) end end }
 wait = task.wait
@@ -7012,7 +7009,7 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     conPrint = function(msg, cls) {
       const s = String(msg);
       if (s.indexOf("__UI_") === 0) {
-        handleUiCap(s);
+        if (window.handleUiCap) window.handleUiCap(s);
         return;
       }
       _cp(msg, cls);
@@ -7028,7 +7025,10 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
 
   // Lua bootstrap snippet for UI (appended when mocks on)
   window.__SHIV_UI_BOOT = String.raw`
--- UI preview bridge
+-- UI preview bridge (overrides weak mocks)
+Instance = nil
+Color3 = nil
+UDim2 = nil
 local __uid = 0
 local function __uid_next()
   __uid = __uid + 1
@@ -7050,13 +7050,13 @@ local function __encode_color3(c)
   return '{"r":'..__json_num(c.R or c.r or 0)..',"g":'..__json_num(c.G or c.g or 0)..',"b":'..__json_num(c.B or c.b or 0)..'}'
 end
 
-UDim2 = UDim2 or {}
-UDim2.new = UDim2.new or function(xs, xo, ys, yo)
+UDim2 = {}
+UDim2.new = function(xs, xo, ys, yo)
   return { X = { Scale = xs or 0, Offset = xo or 0 }, Y = { Scale = ys or 0, Offset = yo or 0 }, xs = xs or 0, xo = xo or 0, ys = ys or 0, yo = yo or 0 }
 end
-Color3 = Color3 or {}
-Color3.new = Color3.new or function(r,g,b) return { R = r or 0, G = g or 0, B = b or 0, r = r or 0, g = g or 0, b = b or 0 } end
-Color3.fromRGB = Color3.fromRGB or function(r,g,b) return Color3.new((r or 0)/255,(g or 0)/255,(b or 0)/255) end
+Color3 = {}
+Color3.new = function(r,g,b) return { R = r or 0, G = g or 0, B = b or 0, r = r or 0, g = g or 0, b = b or 0 } end
+Color3.fromRGB = function(r,g,b) return Color3.new((r or 0)/255,(g or 0)/255,(b or 0)/255) end
 
 local function __ui_proxy(className, id)
   local props = { ClassName = className, Name = className, Parent = nil }
@@ -7115,7 +7115,7 @@ local function __ui_proxy(className, id)
   return obj
 end
 
-Instance = Instance or {}
+Instance = {}
 Instance.new = function(className, parent)
   className = tostring(className or "Frame")
   local id = __uid_next()
