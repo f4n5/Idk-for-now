@@ -1097,6 +1097,120 @@ textarea:focus {
   .str .meta { grid-column: 2; }
 }
 
+
+/* ---- Lua Editor ---- */
+.ed-wrap {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm, 8px);
+  overflow: hidden;
+  background: #0a0e16;
+  min-height: 420px;
+  max-height: 70vh;
+}
+.ed-gutter {
+  background: #0c101a;
+  border-right: 1px solid var(--border);
+  padding: 12px 8px;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+  overflow: hidden;
+  white-space: pre;
+}
+.ed-body {
+  position: relative;
+  overflow: auto;
+}
+.ed-body pre.ed-hl,
+.ed-body textarea.ed-code {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: var(--mono) !important;
+  font-size: 0.8rem !important;
+  line-height: 1.55 !important;
+  tab-size: 2;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
+  border: none !important;
+  box-shadow: none !important;
+  min-height: 420px;
+}
+.ed-body pre.ed-hl {
+  position: absolute;
+  left: 0; top: 0; right: 0;
+  pointer-events: none;
+  color: transparent;
+  background: transparent !important;
+  z-index: 1;
+}
+.ed-body pre.ed-hl code {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  white-space: pre;
+  background: transparent;
+}
+.ed-body textarea.ed-code {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  resize: vertical;
+  background: transparent !important;
+  color: var(--text) !important;
+  caret-color: var(--accent);
+  outline: none;
+}
+.ed-tok-kw { color: #c792ea; }
+.ed-tok-str { color: #c3e88d; }
+.ed-tok-num { color: #f78c6c; }
+.ed-tok-cmt { color: #546e7a; font-style: italic; }
+.ed-tok-fn { color: #82aaff; }
+.ed-tok-lib { color: #89ddff; }
+.ed-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm, 8px) var(--radius-sm, 8px);
+  background: var(--panel2, #141c2c);
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+.ed-status b { color: var(--text); font-weight: 600; }
+.ed-findbar {
+  display: none;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--panel2, #141c2c);
+  border: 1px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm, 8px) var(--radius-sm, 8px) 0 0;
+}
+.ed-findbar.show { display: flex; }
+.ed-findbar input {
+  background: #0a0e16;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  min-width: 140px;
+}
+
 </style>
 <!-- Offline Fengari Lua VM (bundled, no CDN) -->
 <script>
@@ -1126,6 +1240,7 @@ Copyright © 1994–2017 Lua.org, PUC-Rio.
   <button type="button" class="app-tab" data-app="tools">Tools</button>
   <button type="button" class="app-tab" data-app="lab">Lab</button>
   <button type="button" class="app-tab" data-app="regex">Regex</button>
+  <button type="button" class="app-tab" data-app="editor">Editor</button>
 </nav>
 <main>
 <div class="app-panel active" id="panelDeobf" data-app="deobf">
@@ -1591,6 +1706,65 @@ Mocks game/HttpGet/loadstring safely (compile errors become stubs, no host crash
       <div>
         <h2 style="font-size:0.75rem;color:var(--muted);margin-bottom:6px">REPLACE RESULT</h2>
         <textarea id="rxOutText" placeholder="after replace" style="min-height:100px"></textarea>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="app-panel" id="panelEditor" data-app="editor">
+  <div class="panel">
+    <div class="panel-h">
+      <h2>Lua Editor</h2>
+      <span class="tag">syntax · find · templates · run</span>
+    </div>
+    <div style="padding:12px 14px;display:grid;gap:10px">
+      <div class="row" id="edToolbar">
+        <button type="button" class="primary" id="edRun">Run in Console</button>
+        <button type="button" id="edFormat">Indent</button>
+        <button type="button" id="edFind">Find</button>
+        <button type="button" id="edComment">Toggle comment</button>
+        <button type="button" id="edDup">Duplicate line</button>
+        <button type="button" class="copy" id="edCopy">Copy</button>
+        <button type="button" id="edClear">Clear</button>
+        <button type="button" id="edToDeobf">→ Deobf</button>
+        <button type="button" id="edToEnc">→ Encrypt</button>
+        <button type="button" id="edFromClean">Load clean</button>
+        <button type="button" id="edFromSource">Load source</button>
+        <label style="font-size:0.75rem;color:var(--muted)">template
+          <select id="edTemplate" style="background:#0a0e16;border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-family:var(--mono);font-size:0.75rem">
+            <option value="">—</option>
+            <option value="hello">Hello</option>
+            <option value="http">HttpGet stub</option>
+            <option value="module">Module skeleton</option>
+            <option value="hook">Metatable hook</option>
+            <option value="loop">Task loop</option>
+            <option value="ui">Simple ScreenGui</option>
+          </select>
+        </label>
+      </div>
+      <div class="ed-findbar" id="edFindBar">
+        <input id="edFindIn" placeholder="find">
+        <input id="edReplIn" placeholder="replace">
+        <button type="button" id="edFindNext">Next</button>
+        <button type="button" id="edReplOne">Replace</button>
+        <button type="button" id="edReplAll">Replace all</button>
+        <button type="button" id="edFindClose">Close</button>
+        <span id="edFindCount" style="font-family:var(--mono);font-size:0.72rem;color:var(--muted)"></span>
+      </div>
+      <div class="ed-wrap" id="edWrap">
+        <div class="ed-gutter" id="edGutter">1</div>
+        <div class="ed-body">
+          <pre class="ed-hl" aria-hidden="true"><code id="edHl"></code></pre>
+          <textarea class="ed-code" id="edCode" spellcheck="false" placeholder="-- Lua editor&#10;print('hello')"></textarea>
+        </div>
+      </div>
+      <div class="ed-status">
+        <span>Ln <b id="edLn">1</b>, Col <b id="edCol">1</b></span>
+        <span>Lines <b id="edLines">1</b></span>
+        <span>Chars <b id="edChars">0</b></span>
+        <span>Sel <b id="edSel">0</b></span>
+        <span id="edHint">Tab indent · Ctrl+Enter run · Ctrl+F find</span>
       </div>
     </div>
   </div>
@@ -6198,6 +6372,307 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
       if ($("#rxFlags")) $("#rxFlags").value = "g";
       rxRun();
     });
+  });
+
+  
+  // ===== Lua Editor =====
+  const ED_KW = /\b(and|break|do|else|elseif|end|false|for|function|goto|if|in|local|nil|not|or|repeat|return|then|true|until|while)\b/g;
+  const ED_LIB = /\b(string|table|math|bit32|coroutine|os|debug|utf8|task|game|workspace|script|Instance|Vector3|CFrame|Color3|UDim2|Enum|Pairs|ipairs|pairs|type|typeof|tonumber|tostring|print|warn|error|pcall|xpcall|select|unpack|assert|getfenv|setfenv|loadstring|load|require|getgenv|getrenv|identifyexecutor)\b/g;
+  const ED_TEMPLATES = {
+    hello: "-- hello\nprint('ShivLab editor')\nprint(1 + 2 * 3)\n",
+    http: "local url = 'https://example.com/script.lua'\nlocal body = game:HttpGet(url)\nprint(body) -- sandbox: --http-stub--\n",
+    module: "local M = {}\n\nfunction M.init()\n  print('init')\nend\n\nfunction M.run(x)\n  return x\nend\n\nreturn M\n",
+    hook: "local mt = getrawmetatable and getrawmetatable(game) or nil\nif not mt then print('no getrawmetatable') return end\nlocal old = mt.__namecall\nsetreadonly(mt, false)\nmt.__namecall = newcclosure(function(self, ...)\n  local method = getnamecallmethod()\n  -- if method == 'Kick' then return end\n  return old(self, ...)\nend)\nsetreadonly(mt, true)\nprint('hook installed')\n",
+    loop: "task.spawn(function()\n  while true do\n    task.wait(1)\n    print('tick', os.clock())\n  end\nend)\n",
+    ui: "local sg = Instance.new('ScreenGui')\nsg.Name = 'ShivLab'\nlocal fr = Instance.new('Frame')\nfr.Size = UDim2.new(0, 220, 0, 120)\nfr.Position = UDim2.new(0.5, -110, 0.5, -60)\nfr.Parent = sg\nprint('ui tree built (mocked in console)')\n"
+  };
+
+  function edEscape(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function edHighlight(src) {
+    // tokenize roughly: comments, strings, then keywords
+    let s = edEscape(src);
+    // comments
+    s = s.replace(/(--\[\[[\s\S]*?\]\])|(--[^\n]*)/g, '<span class="ed-tok-cmt">$&</span>');
+    // strings long and short — skip if already in span (best effort)
+    s = s.replace(/\[\[([\s\S]*?)\]\]/g, function (m) {
+      if (m.indexOf("ed-tok-cmt") >= 0) return m;
+      return '<span class="ed-tok-str">' + m + "</span>";
+    });
+    s = s.replace(/("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, '<span class="ed-tok-str">$1</span>');
+    s = s.replace(/\b(0x[0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\b/g, '<span class="ed-tok-num">$1</span>');
+    s = s.replace(ED_KW, '<span class="ed-tok-kw">$1</span>');
+    s = s.replace(ED_LIB, '<span class="ed-tok-lib">$1</span>');
+    s = s.replace(/\b([A-Za-z_][A-Za-z0-9_]*)\s*(?=\()/g, '<span class="ed-tok-fn">$1</span>');
+    return s;
+  }
+
+  function edSync() {
+    const ta = $("#edCode");
+    const gut = $("#edGutter");
+    const hl = $("#edHl");
+    if (!ta) return;
+    const val = ta.value;
+    const lines = val.split("\n");
+    if (gut) {
+      let g = "";
+      for (let i = 1; i <= lines.length; i++) g += i + "\n";
+      gut.textContent = g || "1\n";
+    }
+    if (hl) hl.innerHTML = edHighlight(val) + "\n";
+    // status
+    const pos = ta.selectionStart || 0;
+    const pre = val.slice(0, pos);
+    const ln = pre.split("\n").length;
+    const col = pre.length - pre.lastIndexOf("\n");
+    const sel = Math.abs((ta.selectionEnd || 0) - pos);
+    if ($("#edLn")) $("#edLn").textContent = String(ln);
+    if ($("#edCol")) $("#edCol").textContent = String(col);
+    if ($("#edLines")) $("#edLines").textContent = String(lines.length);
+    if ($("#edChars")) $("#edChars").textContent = String(val.length);
+    if ($("#edSel")) $("#edSel").textContent = String(sel);
+    // persist
+    try { localStorage.setItem("shivlab_editor", val); } catch (e) {}
+  }
+
+  function edInsert(text) {
+    const ta = $("#edCode");
+    if (!ta) return;
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    const v = ta.value;
+    ta.value = v.slice(0, a) + text + v.slice(b);
+    ta.selectionStart = ta.selectionEnd = a + text.length;
+    ta.focus();
+    edSync();
+  }
+
+  function edIndentSelection(unindent) {
+    const ta = $("#edCode");
+    if (!ta) return;
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    const v = ta.value;
+    const lineStart = v.lastIndexOf("\n", a - 1) + 1;
+    let lineEnd = v.indexOf("\n", b);
+    if (lineEnd < 0) lineEnd = v.length;
+    const block = v.slice(lineStart, lineEnd);
+    const lines = block.split("\n");
+    const next = lines.map((ln) => {
+      if (unindent) return ln.replace(/^(\t|  )/, "");
+      return "  " + ln;
+    }).join("\n");
+    ta.value = v.slice(0, lineStart) + next + v.slice(lineEnd);
+    ta.selectionStart = lineStart;
+    ta.selectionEnd = lineStart + next.length;
+    edSync();
+  }
+
+  function edToggleComment() {
+    const ta = $("#edCode");
+    if (!ta) return;
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    const v = ta.value;
+    const lineStart = v.lastIndexOf("\n", a - 1) + 1;
+    let lineEnd = v.indexOf("\n", b);
+    if (lineEnd < 0) lineEnd = v.length;
+    const block = v.slice(lineStart, lineEnd);
+    const lines = block.split("\n");
+    const allCommented = lines.every((ln) => /^\s*--/.test(ln) || ln.trim() === "");
+    const next = lines.map((ln) => {
+      if (!ln.trim()) return ln;
+      if (allCommented) return ln.replace(/^(\s*)--\s?/, "$1");
+      return ln.replace(/^(\s*)/, "$1-- ");
+    }).join("\n");
+    ta.value = v.slice(0, lineStart) + next + v.slice(lineEnd);
+    edSync();
+  }
+
+  function edDupLine() {
+    const ta = $("#edCode");
+    if (!ta) return;
+    const a = ta.selectionStart;
+    const v = ta.value;
+    const lineStart = v.lastIndexOf("\n", a - 1) + 1;
+    let lineEnd = v.indexOf("\n", a);
+    if (lineEnd < 0) lineEnd = v.length;
+    const line = v.slice(lineStart, lineEnd);
+    ta.value = v.slice(0, lineEnd) + "\n" + line + v.slice(lineEnd);
+    ta.selectionStart = ta.selectionEnd = lineEnd + 1 + (a - lineStart);
+    edSync();
+  }
+
+  function edFormat() {
+    // simple indent by keywords
+    const ta = $("#edCode");
+    if (!ta) return;
+    const lines = ta.value.split("\n");
+    let depth = 0;
+    const openers = /\b(function|then|do|repeat)\b/;
+    const closers = /^\s*(end|until|else|elseif)\b/;
+    const out = [];
+    for (let raw of lines) {
+      const t = raw.trim();
+      if (closers.test(t) && !/\bthen\b/.test(t) && !/\bdo\b/.test(t)) depth = Math.max(0, depth - 1);
+      if (t.startsWith("else") || t.startsWith("elseif")) {
+        out.push("  ".repeat(Math.max(0, depth)) + t);
+      } else {
+        out.push("  ".repeat(Math.max(0, depth)) + t);
+      }
+      if (openers.test(t) && !/\bend\b/.test(t)) depth++;
+      if (/\belseif\b.*\bthen\b/.test(t)) { /* depth already handled */ }
+    }
+    ta.value = out.join("\n");
+    edSync();
+  }
+
+  function edFindNext() {
+    const ta = $("#edCode");
+    const q = ($("#edFindIn") && $("#edFindIn").value) || "";
+    if (!ta || !q) return;
+    const v = ta.value;
+    let from = ta.selectionEnd || 0;
+    let i = v.indexOf(q, from);
+    if (i < 0) i = v.indexOf(q, 0);
+    if (i < 0) {
+      if ($("#edFindCount")) $("#edFindCount").textContent = "0";
+      return;
+    }
+    ta.focus();
+    ta.selectionStart = i;
+    ta.selectionEnd = i + q.length;
+    // count
+    let c = 0, p = 0;
+    while ((p = v.indexOf(q, p)) >= 0) { c++; p += q.length || 1; }
+    if ($("#edFindCount")) $("#edFindCount").textContent = c + " found";
+    edSync();
+  }
+
+  function edReplaceOne() {
+    const ta = $("#edCode");
+    const q = ($("#edFindIn") && $("#edFindIn").value) || "";
+    const r = ($("#edReplIn") && $("#edReplIn").value) || "";
+    if (!ta || !q) return;
+    const a = ta.selectionStart, b = ta.selectionEnd;
+    if (ta.value.slice(a, b) === q) {
+      ta.value = ta.value.slice(0, a) + r + ta.value.slice(b);
+      ta.selectionStart = ta.selectionEnd = a + r.length;
+      edSync();
+    }
+    edFindNext();
+  }
+
+  function edReplaceAll() {
+    const ta = $("#edCode");
+    const q = ($("#edFindIn") && $("#edFindIn").value) || "";
+    const r = ($("#edReplIn") && $("#edReplIn").value) || "";
+    if (!ta || !q) return;
+    ta.value = ta.value.split(q).join(r);
+    edSync();
+    if ($("#edFindCount")) $("#edFindCount").textContent = "replaced";
+  }
+
+  // wire
+  const edCode = $("#edCode");
+  if (edCode) {
+    edCode.addEventListener("input", edSync);
+    edCode.addEventListener("click", edSync);
+    edCode.addEventListener("keyup", edSync);
+    edCode.addEventListener("scroll", () => {
+      const gut = $("#edGutter");
+      const hl = $("#edHl");
+      if (gut) gut.scrollTop = edCode.scrollTop;
+      const pre = edCode.parentElement && edCode.parentElement.querySelector("pre.ed-hl");
+      if (pre) pre.scrollTop = edCode.scrollTop;
+      if (pre) pre.scrollLeft = edCode.scrollLeft;
+    });
+    edCode.addEventListener("keydown", (e) => {
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (e.shiftKey) edIndentSelection(true);
+        else if (edCode.selectionStart !== edCode.selectionEnd) edIndentSelection(false);
+        else edInsert("  ");
+      } else if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if ($("#edRun")) $("#edRun").click();
+      } else if (e.key === "f" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        const bar = $("#edFindBar");
+        if (bar) bar.classList.add("show");
+        if ($("#edFindIn")) $("#edFindIn").focus();
+      } else if (e.key === "/" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        edToggleComment();
+      } else if (e.key === "d" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        edDupLine();
+      } else if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        try { localStorage.setItem("shivlab_editor", edCode.value); log("editor saved", "ok"); } catch (err) {}
+      }
+    });
+    try {
+      const saved = localStorage.getItem("shivlab_editor");
+      if (saved) edCode.value = saved;
+    } catch (e) {}
+    edSync();
+  }
+
+  if ($("#edRun")) $("#edRun").addEventListener("click", () => {
+    const code = ($("#edCode") && $("#edCode").value) || "";
+    if ($("#conIn")) $("#conIn").value = code;
+    switchApp("console");
+    setTimeout(() => { if (typeof runConsole === "function") runConsole(); }, 50);
+  });
+  if ($("#edFormat")) $("#edFormat").addEventListener("click", edFormat);
+  if ($("#edFind")) $("#edFind").addEventListener("click", () => {
+    const bar = $("#edFindBar");
+    if (bar) bar.classList.toggle("show");
+    if ($("#edFindIn")) $("#edFindIn").focus();
+  });
+  if ($("#edFindClose")) $("#edFindClose").addEventListener("click", () => {
+    const bar = $("#edFindBar");
+    if (bar) bar.classList.remove("show");
+  });
+  if ($("#edFindNext")) $("#edFindNext").addEventListener("click", edFindNext);
+  if ($("#edReplOne")) $("#edReplOne").addEventListener("click", edReplaceOne);
+  if ($("#edReplAll")) $("#edReplAll").addEventListener("click", edReplaceAll);
+  if ($("#edComment")) $("#edComment").addEventListener("click", edToggleComment);
+  if ($("#edDup")) $("#edDup").addEventListener("click", edDupLine);
+  if ($("#edCopy")) $("#edCopy").addEventListener("click", () => {
+    copyText(($("#edCode") && $("#edCode").value) || "").then(() => log("editor copied", "ok"));
+  });
+  if ($("#edClear")) $("#edClear").addEventListener("click", () => {
+    if ($("#edCode")) { $("#edCode").value = ""; edSync(); }
+  });
+  if ($("#edToDeobf")) $("#edToDeobf").addEventListener("click", () => {
+    const s = ($("#edCode") && $("#edCode").value) || "";
+    if ($("#pasteBox")) $("#pasteBox").value = s;
+    sourceText = s;
+    switchApp("deobf");
+  });
+  if ($("#edToEnc")) $("#edToEnc").addEventListener("click", () => {
+    const s = ($("#edCode") && $("#edCode").value) || "";
+    if ($("#encIn")) $("#encIn").value = s;
+    switchApp("encrypt");
+  });
+  if ($("#edFromClean")) $("#edFromClean").addEventListener("click", () => {
+    if ($("#edCode")) {
+      $("#edCode").value = lastCleanSource || window.__LAST_PAYLOAD || "";
+      edSync();
+    }
+  });
+  if ($("#edFromSource")) $("#edFromSource").addEventListener("click", () => {
+    if ($("#edCode")) { $("#edCode").value = sourceText || ""; edSync(); }
+  });
+  if ($("#edTemplate")) $("#edTemplate").addEventListener("change", () => {
+    const k = $("#edTemplate").value;
+    if (!k || !ED_TEMPLATES[k]) return;
+    if ($("#edCode")) { $("#edCode").value = ED_TEMPLATES[k]; edSync(); }
+    $("#edTemplate").value = "";
   });
 
   setTimeout(() => {
