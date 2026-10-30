@@ -6953,7 +6953,14 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
     applyProps(el, p) {
       if (!el || !p) return;
       if (p.Name) el.dataset.name = p.Name;
-      if (p.Text != null) { el.textContent = String(p.Text); el.setAttribute("title", String(p.Text)); }
+      if (p.Text != null) {
+        const tx = String(p.Text);
+        el.textContent = tx;
+        el.setAttribute("title", tx);
+        if (!el.style.fontSize) el.style.fontSize = "14px";
+        if (!el.style.color) el.style.color = "#fff";
+      }
+      if (p.TextSize != null) el.style.fontSize = Number(p.TextSize) + "px";
       if (p.BackgroundColor3) {
         const c = p.BackgroundColor3;
         const r = c.r != null ? c.r : c.R, g = c.g != null ? c.g : c.G, b = c.b != null ? c.b : c.B;
@@ -7084,95 +7091,108 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
 
   // Lua bootstrap snippet for UI (appended when mocks on)
   window.__SHIV_UI_BOOT = String.raw`
--- ShivLab full UI / CoreGui integration for cheat UI testing
-Instance = nil
-Color3 = nil
-UDim2 = nil
-UDim = nil
+-- ShivLab FULL Roblox GUI surface (preview)
+Instance = nil; Color3 = nil; UDim2 = nil; UDim = nil; Vector2 = nil
 
 local __uid = 0
-local function __uid_next()
-  __uid = __uid + 1
-  return "u" .. tostring(__uid)
+local function __uid_next() __uid = __uid + 1; return "u"..tostring(__uid) end
+local function __jn(n) if type(n)~="number" then return "0" end return tostring(n) end
+local function __enc_udim2(u)
+  if type(u)~="table" then return '{"xs":0,"xo":0,"ys":0,"yo":0}' end
+  return '{"xs":'..__jn(u.X and u.X.Scale or u.xs or 0)..',"xo":'..__jn(u.X and u.X.Offset or u.xo or 0)..',"ys":'..__jn(u.Y and u.Y.Scale or u.ys or 0)..',"yo":'..__jn(u.Y and u.Y.Offset or u.yo or 0)..'}'
 end
-local function __json_num(n)
-  if type(n) ~= "number" then return "0" end
-  return tostring(n)
+local function __enc_c3(c)
+  if type(c)~="table" then return '{"r":0.2,"g":0.2,"b":0.25}' end
+  return '{"r":'..__jn(c.R or c.r or 0)..',"g":'..__jn(c.G or c.g or 0)..',"b":'..__jn(c.B or c.b or 0)..'}'
 end
-local function __encode_udim2(u)
-  if type(u) ~= "table" then return '{"xs":0,"xo":0,"ys":0,"yo":0}' end
-  return '{"xs":'..__json_num(u.X and u.X.Scale or u.xs or 0)
-    ..',"xo":'..__json_num(u.X and u.X.Offset or u.xo or 0)
-    ..',"ys":'..__json_num(u.Y and u.Y.Scale or u.ys or 0)
-    ..',"yo":'..__json_num(u.Y and u.Y.Offset or u.yo or 0)..'}'
-end
-local function __encode_color3(c)
-  if type(c) ~= "table" then return '{"r":0.2,"g":0.2,"b":0.25}' end
-  return '{"r":'..__json_num(c.R or c.r or 0)..',"g":'..__json_num(c.G or c.g or 0)..',"b":'..__json_num(c.B or c.b or 0)..'}'
-end
-local function __encode_str(v)
-  return tostring(v or ""):gsub("\\","\\\\"):gsub('"','\\"'):gsub("\n","\\n")
-end
+local function __esc(v) return tostring(v or ""):gsub("\\","\\\\"):gsub('"','\\"'):gsub("\n","\\n") end
 
-UDim = {}
-UDim.new = function(scale, offset) return { Scale = scale or 0, Offset = offset or 0 } end
+Vector2 = { new = function(x,y) return { X = x or 0, Y = y or 0, x = x or 0, y = y or 0 } end }
+UDim = { new = function(s,o) return { Scale = s or 0, Offset = o or 0 } end }
 UDim2 = {}
-UDim2.new = function(xs, xo, ys, yo)
-  return {
-    X = { Scale = xs or 0, Offset = xo or 0 },
-    Y = { Scale = ys or 0, Offset = yo or 0 },
-    xs = xs or 0, xo = xo or 0, ys = ys or 0, yo = yo or 0
-  }
+UDim2.new = function(xs,xo,ys,yo)
+  return { X={Scale=xs or 0,Offset=xo or 0}, Y={Scale=ys or 0,Offset=yo or 0}, xs=xs or 0, xo=xo or 0, ys=ys or 0, yo=yo or 0 }
 end
-UDim2.fromOffset = function(x, y) return UDim2.new(0, x or 0, 0, y or 0) end
-UDim2.fromScale = function(x, y) return UDim2.new(x or 0, 0, y or 0, 0) end
-
+UDim2.fromOffset = function(x,y) return UDim2.new(0,x or 0,0,y or 0) end
+UDim2.fromScale = function(x,y) return UDim2.new(x or 0,0,y or 0,0) end
 Color3 = {}
-Color3.new = function(r,g,b) return { R = r or 0, G = g or 0, B = b or 0, r = r or 0, g = g or 0, b = b or 0 } end
+Color3.new = function(r,g,b) return {R=r or 0,G=g or 0,B=b or 0,r=r or 0,g=g or 0,b=b or 0} end
 Color3.fromRGB = function(r,g,b) return Color3.new((r or 0)/255,(g or 0)/255,(b or 0)/255) end
-Color3.fromHSV = function(h,s,v) return Color3.new(v or 1, s or 1, h or 0) end
+Color3.fromHSV = function(h,s,v) return Color3.new(v or 1, s or 0, h or 0) end
+ColorSequence = { new = function(c) return { Keypoints = {} } end }
+NumberSequence = { new = function(n) return { Keypoints = {} } end }
+NumberRange = { new = function(a,b) return { Min = a or 0, Max = b or a or 0 } end }
+Rect = { new = function(a,b,c,d) return { Min={X=a or 0,Y=b or 0}, Max={X=c or 0,Y=d or 0} } end }
+Font = Font or {}
 
 Enum = Enum or {}
-local function enumBag(name, items)
-  local t = {}
-  for i,v in ipairs(items) do t[v] = i end
-  Enum[name] = t
-end
-enumBag("Font", {"SourceSans","SourceSansBold","Gotham","GothamBold","Code","Arcade","Antique"})
-enumBag("TextXAlignment", {"Left","Center","Right"})
-enumBag("TextYAlignment", {"Top","Center","Bottom"})
-enumBag("FillDirection", {"Horizontal","Vertical"})
-enumBag("HorizontalAlignment", {"Left","Center","Right"})
-enumBag("VerticalAlignment", {"Top","Center","Bottom"})
-enumBag("SortOrder", {"LayoutOrder","Name"})
-enumBag("ScaleType", {"Stretch","Fit","Crop","Slice"})
-enumBag("ZIndexBehavior", {"Global","Sibling"})
-Enum.CoreGuiType = { PlayerList=1, Health=2, Backpack=3, Chat=4, EmotesMenu=5, All=6 }
+local function e(name, items) local t={} for i,v in ipairs(items) do t[v]=i end Enum[name]=t end
+e("Font", {"Legacy","Arial","ArialBold","SourceSans","SourceSansBold","SourceSansSemibold","SourceSansLight","SourceSansItalic","Bodoni","Garamond","Cartoon","Code","Highway","SciFi","Arcade","Antique","Gotham","GothamMedium","GothamBold","GothamBlack","AmaticSC","Bangers","Creepster","DenkOne","Fondamento","FredokaOne","GrenzeGotisch","IndieFlower","JosefinSans","Jura","Kalam","LuckiestGuy","Merriweather","Michroma","Nunito","Oswald","PatrickHand","PermanentMarker","Roboto","RobotoCondensed","RobotoMono","Sarpanch","SpecialElite","TitilliumWeb","Ubuntu"})
+e("TextXAlignment", {"Left","Center","Right"})
+e("TextYAlignment", {"Top","Center","Bottom"})
+e("FillDirection", {"Horizontal","Vertical"})
+e("HorizontalAlignment", {"Left","Center","Right"})
+e("VerticalAlignment", {"Top","Center","Bottom"})
+e("SortOrder", {"Name","LayoutOrder","Custom"})
+e("ScaleType", {"Stretch","Slice","Tile","Fit","Crop"})
+e("ZIndexBehavior", {"Global","Sibling"})
+e("ScrollingDirection", {"X","Y","XY"})
+e("AutomaticSize", {"None","X","Y","XY"})
+e("SizeConstraint", {"RelativeXY","RelativeXX","RelativeYY"})
+e("ApplyStrokeMode", {"Contextual","Border"})
+e("BorderMode", {"Outline","Middle","Inset"})
+e("FrameStyle", {"Custom","ChatBlue","RobloxSquare","RobloxRound","ChatGreen","ChatRed","DropShadow"})
+e("ButtonStyle", {"Custom","RobloxButton","RobloxButtonDefault","RobloxRoundButton"})
+e("ResamplerMode", {"Default","Pixelated"})
+e("CoreGuiType", {"PlayerList","Health","Backpack","Chat","EmotesMenu","All"})
+e("KeyCode", {"Unknown","A","B","C","Return","Space","LeftShift","RightShift","Tab","Escape"})
+e("UserInputType", {"MouseButton1","MouseButton2","MouseMovement","Touch","Keyboard","Focus","None"})
+e("EasingStyle", {"Linear","Sine","Back","Quad","Quart","Quint","Bounce","Elastic","Exponential","Circular","Cubic"})
+e("EasingDirection", {"In","Out","InOut"})
 
--- service containers
+-- TweenService light mock
+local TweenService = { Create = function(_, inst, info, props)
+  return { Play = function() if type(props)=="table" then for k,v in pairs(props) do inst[k]=v end end end, Cancel=function() end, Pause=function() end }
+end }
+local UserInputService = {
+  GetMouseLocation = function() return Vector2.new(0,0) end,
+  IsKeyDown = function() return false end,
+  InputBegan = { Connect = function(_,fn) return {Disconnect=function() end} end },
+  InputEnded = { Connect = function(_,fn) return {Disconnect=function() end} end },
+}
+local RunService = {
+  Heartbeat = { Connect = function(_,fn) return {Disconnect=function() end} end },
+  RenderStepped = { Connect = function(_,fn) return {Disconnect=function() end} end },
+  Stepped = { Connect = function(_,fn) return {Disconnect=function() end} end },
+}
+
 local __services = {}
+local function __bindable()
+  local subs = {}
+  return {
+    Connect = function(_, fn) subs[#subs+1]=fn; return { Disconnect = function() end } end,
+    Fire = function(_, ...) for _,fn in ipairs(subs) do pcall(fn, ...) end end,
+    Wait = function() end,
+  }
+end
+
 local function __service(name)
   if __services[name] then return __services[name] end
   local id = __uid_next()
   local kids = {}
   local obj = { Name = name, ClassName = name, __uid = id, __kids = kids }
-  local mt = {
+  setmetatable(obj, {
     __index = function(_, k)
       if k == "FindFirstChild" or k == "WaitForChild" or k == "FindFirstChildOfClass" or k == "FindFirstChildWhichIsA" then
-        return function(_, n)
-          if kids[n] then return kids[n] end
-          -- soft create folder-like child
-          return nil
-        end
+        return function(_, n) return kids[n] end
       end
       if k == "GetChildren" then return function() local t={} for _,v in pairs(kids) do t[#t+1]=v end return t end end
+      if k == "GetDescendants" then return function() return {} end end
       if k == "IsA" then return function(_, c) return c == name or c == "Instance" end end
       if kids[k] then return kids[k] end
       return nil
-    end,
-    __newindex = function(_, k, v) rawset(obj, k, v) end
-  }
-  setmetatable(obj, mt)
+    end
+  })
   __services[name] = obj
   print("__UI_NEW__|"..name.."|"..id)
   print("__UI_PARENT__|"..id.."|screen")
@@ -7182,33 +7202,26 @@ end
 local CoreGui = __service("CoreGui")
 local PlayerGui = __service("PlayerGui")
 local StarterGui = __service("StarterGui")
-StarterGui.SetCoreGuiEnabled = function(_, which, enabled)
-  print("[StarterGui] SetCoreGuiEnabled", tostring(which), tostring(enabled))
-end
-StarterGui.SetCore = function(_, name, val)
-  print("[StarterGui] SetCore", tostring(name))
-end
-StarterGui.GetCore = function(_, name) return nil end
-
+StarterGui.SetCoreGuiEnabled = function(_, which, en) print("[StarterGui] SetCoreGuiEnabled", tostring(which), tostring(en)) end
+StarterGui.SetCore = function(_, n, v) print("[StarterGui] SetCore", tostring(n)) end
+StarterGui.GetCore = function(_, n) return nil end
 local Players = __service("Players")
-local LocalPlayer = { Name = "LocalPlayer", UserId = 1, Character = nil, __uid = __uid_next() }
+local LocalPlayer = { Name = "LocalPlayer", UserId = 1, Character = nil, Team = nil, __uid = __uid_next() }
 LocalPlayer.PlayerGui = PlayerGui
 Players.LocalPlayer = LocalPlayer
 Players.GetPlayers = function() return { LocalPlayer } end
+Players.GetPlayerFromCharacter = function() return LocalPlayer end
 
--- gethui / syn protect gui targets CoreGui
 gethui = gethui or function() return CoreGui end
 get_hidden_gui = get_hidden_gui or gethui
 hiddenUI = hiddenUI or gethui
+protect_gui = protect_gui or function(g) end
 
--- game:GetService override on top of callable mock
 local __old_game = game
 game = setmetatable({
-  CoreGui = CoreGui,
-  Players = Players,
-  StarterGui = StarterGui,
-  Workspace = workspace or __old_game,
-  workspace = workspace or __old_game,
+  CoreGui = CoreGui, Players = Players, StarterGui = StarterGui,
+  TweenService = TweenService, UserInputService = UserInputService, RunService = RunService,
+  Workspace = workspace or __old_game, workspace = workspace or __old_game,
 }, {
   __index = function(t, k)
     if k == "GetService" then
@@ -7217,165 +7230,176 @@ game = setmetatable({
         if name == "CoreGui" then return CoreGui end
         if name == "Players" then return Players end
         if name == "StarterGui" then return StarterGui end
-        if name == "CorePackages" then return __service("CorePackages") end
-        if __old_game and type(__old_game) == "table" then
-          -- fall through to previous mock callable
+        if name == "TweenService" then return TweenService end
+        if name == "UserInputService" then return UserInputService end
+        if name == "RunService" then return RunService end
+        if name == "HttpService" then
+          return {
+            JSONEncode = function(_, t) return "{}" end,
+            JSONDecode = function(_, s) return {} end,
+            GetAsync = function(_, url) print("[HttpService] GetAsync", tostring(url)); return "--http-stub--" end,
+            PostAsync = function(_, url) print("[HttpService] PostAsync", tostring(url)); return "" end,
+            GenerateGUID = function() return "guid" end,
+          }
         end
         return __service(name)
       end
     end
-    if rawget(t, k) ~= nil then return rawget(t, k) end
-    if type(__old_game) == "table" then
-      local ok, v = pcall(function() return __old_game[k] end)
-      if ok and v ~= nil then return v end
-    end
+    if rawget(t,k) ~= nil then return rawget(t,k) end
     return __service(tostring(k))
   end
 })
 workspace = game.Workspace or workspace
+if syn then syn.protect_gui = syn.protect_gui or protect_gui end
+
+local function __signal()
+  return __bindable()
+end
 
 local function __ui_proxy(className, id)
   local props = {
-    ClassName = className,
-    Name = className,
-    Parent = nil,
-    Visible = true,
-    ZIndex = 1,
-    BackgroundTransparency = 0,
-    Text = "",
-    AnchorPoint = { X = 0, Y = 0 },
+    ClassName = className, Name = className, Parent = nil, Visible = true,
+    Active = true, ZIndex = 1, LayoutOrder = 0, BackgroundTransparency = 0,
+    BorderSizePixel = 0, Text = "", TextSize = 14, TextWrapped = false, RichText = false,
+    AutoButtonColor = true, Modal = false, ClipsDescendants = false,
+    AnchorPoint = Vector2.new(0,0),
+    Size = UDim2.new(0,100,0,100), Position = UDim2.new(0,0,0,0),
+    BackgroundColor3 = Color3.fromRGB(163,162,165),
+    TextColor3 = Color3.fromRGB(255,255,255),
+    BorderColor3 = Color3.fromRGB(27,42,53),
+    Font = Enum.Font.SourceSans,
+    TextXAlignment = Enum.TextXAlignment.Center,
+    TextYAlignment = Enum.TextYAlignment.Center,
   }
   local children = {}
+  local signals = {
+    MouseButton1Click = __signal(), MouseButton1Down = __signal(), MouseButton1Up = __signal(),
+    MouseButton2Click = __signal(), MouseEnter = __signal(), MouseLeave = __signal(),
+    InputBegan = __signal(), InputEnded = __signal(), InputChanged = __signal(),
+    Focused = __signal(), FocusLost = __signal(), Changed = __signal(),
+    AncestryChanged = __signal(), ChildAdded = __signal(), ChildRemoved = __signal(),
+    Destroying = __signal(), AbsoluteSize = Vector2.new(0,0), AbsolutePosition = Vector2.new(0,0),
+  }
   local obj = { __uid = id, __kids = children }
-  local mt
-  mt = {
+  local function fire_change(k)
+    if signals.Changed and signals.Changed.Fire then pcall(signals.Changed.Fire, signals.Changed, k) end
+  end
+  local mt = {
     __index = function(_, k)
       if k == "Parent" then return props.Parent end
-      if k == "ClassName" then return className end
+      if signals[k] ~= nil then return signals[k] end
       if props[k] ~= nil then return props[k] end
       if k == "FindFirstChild" or k == "WaitForChild" or k == "FindFirstChildOfClass" or k == "FindFirstChildWhichIsA" then
-        return function(_, name, timeout)
-          if children[name] then return children[name] end
-          return nil
-        end
+        return function(_, n) return children[n] end
       end
-      if k == "GetChildren" then
-        return function()
-          local t = {}
-          for _, v in pairs(children) do t[#t+1] = v end
-          return t
-        end
-      end
+      if k == "FindFirstDescendant" then return function(_, n) return nil end end
+      if k == "GetChildren" then return function() local t={} for _,v in pairs(children) do t[#t+1]=v end return t end end
       if k == "GetDescendants" then
         return function()
           local t = {}
-          local function walk(node)
-            for _, ch in pairs(node.__kids or {}) do
-              t[#t+1] = ch
-              walk(ch)
-            end
-          end
-          walk(obj)
-          return t
+          local function walk(n) for _,ch in pairs(n.__kids or {}) do t[#t+1]=ch; walk(ch) end end
+          walk(obj); return t
         end
       end
       if k == "IsA" then
         return function(_, c)
           c = tostring(c)
-          return c == className or c == "Instance" or c == "GuiObject" or c == "GuiBase2d" or c == "Object"
+          local map = {
+            Frame=true, TextLabel=true, TextButton=true, TextBox=true, ImageLabel=true, ImageButton=true,
+            ScrollingFrame=true, ScreenGui=true, BillboardGui=true, SurfaceGui=true, GuiObject=true,
+            GuiBase2d=true, GuiBase=true, Instance=true, Object=true, LayerCollector=true,
+            UIListLayout=true, UIGridLayout=true, UIPadding=true, UICorner=true, UIStroke=true,
+            UIAspectRatioConstraint=true, UISizeConstraint=true, UITextSizeConstraint=true,
+            UIGradient=true, UIScale=true, UIPageLayout=true, UITableLayout=true,
+          }
+          return c == className or map[c] == true or c == "Instance" or c == "Object"
         end
       end
       if k == "Destroy" then
         return function()
           print("__UI_SET__|"..id.."|Visible|false")
+          if signals.Destroying then pcall(signals.Destroying.Fire, signals.Destroying) end
           props.Parent = nil
         end
       end
       if k == "ClearAllChildren" then
         return function()
-          for name, ch in pairs(children) do
-            children[name] = nil
+          for name,ch in pairs(children) do
+            children[name]=nil
             if ch and ch.__uid then print("__UI_SET__|"..ch.__uid.."|Visible|false") end
           end
         end
       end
-      if k == "Clone" then
-        return function()
-          return __ui_proxy(className, __uid_next())
-        end
+      if k == "Clone" then return function() return __ui_proxy(className, __uid_next()) end end
+      if k == "GetPropertyChangedSignal" then
+        return function(_, prop) return __signal() end
       end
-      if k == "TweenPosition" or k == "TweenSize" then
-        return function() end
+      if k == "IsAncestorOf" or k == "IsDescendantOf" then return function() return false end end
+      if k == "TweenPosition" or k == "TweenSize" or k == "TweenSizeAndPosition" then
+        return function(_, goal, ...) if type(goal)=="table" or goal then end; return true end
       end
+      if k == "CaptureFocus" or k == "ReleaseFocus" then return function() end end
+      if k == "SetTextFromInput" then return function(_, t) obj.Text = t end end
       if children[k] then return children[k] end
       return props[k]
     end,
     __newindex = function(_, k, v)
       props[k] = v
+      fire_change(k)
       if k == "Parent" then
         local pid = "nil"
         if type(v) == "table" and v.__uid then
           pid = v.__uid
           if v.__kids then v.__kids[props.Name or className] = obj end
-        elseif v == CoreGui or (type(v) == "table" and v.Name == "CoreGui") then
-          pid = CoreGui.__uid
-        elseif v == PlayerGui or (type(v) == "table" and v.Name == "PlayerGui") then
-          pid = PlayerGui.__uid
         end
         print("__UI_PARENT__|"..id.."|"..tostring(pid))
-        props.Parent = v
         return
       end
-      if k == "Size" or k == "Position" then
-        print("__UI_SET__|"..id.."|"..k.."|"..__encode_udim2(v))
-        return
+      if k == "Size" or k == "Position" then print("__UI_SET__|"..id.."|"..k.."|"..__enc_udim2(v)); return end
+      if k == "BackgroundColor3" or k == "TextColor3" or k == "BorderColor3" or k == "ImageColor3" or k == "PlaceholderColor3" then
+        print("__UI_SET__|"..id.."|"..k.."|"..__enc_c3(v)); return
       end
-      if k == "BackgroundColor3" or k == "TextColor3" or k == "BorderColor3" or k == "ImageColor3" then
-        print("__UI_SET__|"..id.."|"..k.."|"..__encode_color3(v))
-        return
+      if k == "Text" or k == "Name" or k == "Image" or k == "PlaceholderText" or k == "FontFace" then
+        print("__UI_SET__|"..id.."|"..k..'|"'..__esc(v)..'"'); return
       end
-      if k == "Text" or k == "Name" or k == "Image" or k == "PlaceholderText" then
-        print("__UI_SET__|"..id.."|"..k..'|"'..__encode_str(v)..'"')
-        return
+      if k == "BackgroundTransparency" or k == "TextTransparency" or k == "TextSize" or k == "ZIndex" or k == "BorderSizePixel" or k == "LayoutOrder" or k == "TextStrokeTransparency" or k == "ImageTransparency" or k == "Rotation" then
+        print("__UI_SET__|"..id.."|"..k.."|"..__jn(v)); return
       end
-      if k == "BackgroundTransparency" or k == "TextTransparency" or k == "TextSize" or k == "ZIndex" or k == "BorderSizePixel" or k == "LayoutOrder" or k == "CellPadding" then
-        print("__UI_SET__|"..id.."|"..k.."|"..__json_num(v))
-        return
+      if k == "Visible" or k == "Active" or k == "AutoButtonColor" or k == "RichText" or k == "TextWrapped" or k == "ClipsDescendants" or k == "Modal" or k == "Selectable" or k == "AutoLocalize" then
+        print("__UI_SET__|"..id.."|"..k.."|"..(v and "true" or "false")); return
       end
-      if k == "Visible" or k == "Active" or k == "AutoButtonColor" or k == "RichText" or k == "TextWrapped" or k == "ClipsDescendants" then
-        print("__UI_SET__|"..id.."|"..k.."|"..(v and "true" or "false"))
-        return
+      if k == "Font" or k == "TextXAlignment" or k == "TextYAlignment" or k == "ScaleType" or k == "AutomaticSize" then
+        print("__UI_SET__|"..id.."|"..k..'|"'..__esc(v)..'"'); return
       end
-      if k == "Font" or k == "TextXAlignment" or k == "TextYAlignment" then
-        print("__UI_SET__|"..id.."|"..k..'|"'..__encode_str(v)..'"')
-        return
+      if k == "AnchorPoint" and type(v)=="table" then
+        print("__UI_SET__|"..id.."|AnchorPoint|{"..'"x":'..__jn(v.X or v.x or 0)..',"y":'..__jn(v.Y or v.y or 0).."}"); return
       end
-      if k == "AnchorPoint" and type(v) == "table" then
-        print("__UI_SET__|"..id.."|AnchorPoint|{"..'"x":'..__json_num(v.X or v.x or 0)..',"y":'..__json_num(v.Y or v.y or 0).."}")
+      if k == "Padding" or k == "CellPadding" or k == "CellSize" or k == "PaddingTop" or k == "PaddingBottom" or k == "PaddingLeft" or k == "PaddingRight" then
         return
       end
     end
   }
   setmetatable(obj, mt)
   print("__UI_NEW__|"..className.."|"..id)
+  -- push defaults so preview has size
+  if className == "Frame" or className == "TextLabel" or className == "TextButton" or className == "TextBox" or className == "ImageLabel" or className == "ImageButton" or className == "ScrollingFrame" then
+    print("__UI_SET__|"..id.."|Size|"..__enc_udim2(props.Size))
+    print("__UI_SET__|"..id.."|BackgroundColor3|"..__enc_c3(props.BackgroundColor3))
+  end
   return obj
 end
 
 Instance = {}
 Instance.new = function(className, parent)
   className = tostring(className or "Frame")
-  local id = __uid_next()
-  local o = __ui_proxy(className, id)
+  local o = __ui_proxy(className, __uid_next())
   if parent ~= nil then o.Parent = parent end
   return o
 end
 
--- protect_gui / syn.protect_gui no-ops but keep parent in CoreGui
-protect_gui = protect_gui or function(g) end
-if syn then syn.protect_gui = syn.protect_gui or protect_gui end
-
-print("[ui] CoreGui + PlayerGui ready — parent ScreenGui to game.CoreGui or gethui()")
+print("[ui] FULL GuiObject API + CoreGui/PlayerGui/gethui/TweenService ready")
 `
+
 
 
   setTimeout(() => {
