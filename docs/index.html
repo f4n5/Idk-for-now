@@ -7010,26 +7010,34 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   // __UI_PARENT__|id|parentId
   const __uiNodes = {};
   window.handleUiCap = function handleUiCap(line) {
+    if (!line || typeof line !== "string") return false;
     if (line.indexOf("__UI_NEW__") === 0) {
       const parts = line.split("|");
       const cls = parts[1] || "Frame";
       const id = parts[2] || ("n" + Math.random());
       let className = "rbx-frame";
-      const c = cls.toLowerCase();
+      const c = String(cls).toLowerCase();
       if (c === "textlabel") className = "rbx-textlabel";
       else if (c === "textbutton") className = "rbx-textbutton";
       else if (c === "textbox") className = "rbx-textbox";
       else if (c === "scrollingframe") className = "rbx-scrollingframe";
       else if (c === "imagelabel" || c === "imagebutton") className = "rbx-image";
       else if (c === "screengui" || c === "billboardgui" || c === "surfacegui") className = "rbx-gui rbx-screen";
-      else if (c === "frame" || c === "canvasgroup" || c === "canvasgroup") className = "rbx-frame";
-      else if (c === "uicorner" || c === "uistroke" || c === "uipadding" || c === "uigridlayout" || c === "uilistlayout" || c === "uiaspectratioconstraint" || c === "uisection") className = "rbx-gui rbx-layout";
       else if (c === "coregui" || c === "playergui" || c === "startergui") className = "rbx-gui rbx-screen rbx-core";
-      else if (c === "folder" || c === "configuration") className = "rbx-gui rbx-layout";
+      else if (c.indexOf("ui") === 0 || c === "folder" || c === "configuration") className = "rbx-gui rbx-layout";
+      else if (c === "frame" || c === "canvasgroup") className = "rbx-frame";
+
       const el = window.__SHIV_UI.makeEl(className, { Name: cls });
       el.dataset.uid = id;
       el.dataset.cls = cls;
-      if (c === "screengui") {
+      // dedicated text child so background never hides label
+      const label = document.createElement("span");
+      label.className = "rbx-text-node";
+      label.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:0 8px;pointer-events:none;color:#fff;font-size:14px;font-weight:600;font-family:Segoe UI,sans-serif;white-space:pre-wrap;overflow:hidden;text-align:center;z-index:5;";
+      el.appendChild(label);
+      el.__textNode = label;
+
+      if (c === "screengui" || c === "billboardgui" || c === "surfacegui" || c === "coregui" || c === "playergui" || c === "startergui") {
         el.style.position = "absolute";
         el.style.left = "0"; el.style.top = "0";
         el.style.width = "100%"; el.style.height = "100%";
@@ -7037,37 +7045,68 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
         el.style.border = "none";
         window.__SHIV_UI.mount(el);
       }
-      __uiNodes[id] = el;
+      if (!window.__uiNodes) window.__uiNodes = {};
+      window.__uiNodes[id] = el;
       return true;
     }
     if (line.indexOf("__UI_SET__") === 0) {
       const parts = line.split("|");
       const id = parts[1], prop = parts[2], raw = parts.slice(3).join("|");
-      const el = __uiNodes[id];
+      const nodes = window.__uiNodes || {};
+      const el = nodes[id];
       if (!el) return true;
       let val = raw;
       try { val = JSON.parse(raw); } catch (e) {}
-      const p = {};
-      p[prop] = val;
+      if (prop === "Text" || prop === "PlaceholderText") {
+        const tx = (val == null) ? "" : String(val);
+        if (el.__textNode) el.__textNode.textContent = tx;
+        else el.textContent = tx;
+        el.setAttribute("title", tx);
+        return true;
+      }
+      if (prop === "TextSize") {
+        const px = Number(val) || 14;
+        if (el.__textNode) el.__textNode.style.fontSize = px + "px";
+        el.style.fontSize = px + "px";
+        return true;
+      }
+      if (prop === "TextColor3" && val && typeof val === "object") {
+        const r = val.r != null ? val.r : val.R, g = val.g != null ? val.g : val.G, b = val.b != null ? val.b : val.B;
+        const col = "rgb(" + Math.round(Number(r)*255) + "," + Math.round(Number(g)*255) + "," + Math.round(Number(b)*255) + ")";
+        if (el.__textNode) el.__textNode.style.color = col;
+        el.style.color = col;
+        return true;
+      }
+      if (prop === "Font" || prop === "TextXAlignment" || prop === "TextYAlignment") {
+        if (el.__textNode && prop === "TextXAlignment") {
+          const m = String(val);
+          el.__textNode.style.justifyContent = m.indexOf("Left")>=0 ? "flex-start" : m.indexOf("Right")>=0 ? "flex-end" : "center";
+        }
+        return true;
+      }
+      const p = {}; p[prop] = val;
       window.__SHIV_UI.applyProps(el, p);
       return true;
     }
     if (line.indexOf("__UI_PARENT__") === 0) {
       const parts = line.split("|");
       const id = parts[1], pid = parts[2];
-      const el = __uiNodes[id];
+      const nodes = window.__uiNodes || {};
+      const el = nodes[id];
       if (!el) return true;
       if (!pid || pid === "nil" || pid === "screen") {
         window.__SHIV_UI.mount(el);
-      } else if (__uiNodes[pid]) {
-        __uiNodes[pid].appendChild(el);
+      } else if (nodes[pid]) {
+        nodes[pid].appendChild(el);
         const sc = document.getElementById("conScreen");
         if (sc) sc.classList.remove("empty");
       }
       return true;
     }
     return false;
-  }
+  };
+
+
 
   // Patch conPrint to intercept UI tags
   if (typeof conPrint === "function") {
@@ -7085,7 +7124,9 @@ if ($("#btnConRun")) $("#btnConRun").addEventListener("click", runConsole);
   if ($("#btnConScreenClear")) {
     $("#btnConScreenClear").addEventListener("click", () => {
       window.__SHIV_UI.clear();
-      for (const k of Object.keys(__uiNodes)) delete __uiNodes[k];
+      if (window.__uiNodes) {
+        for (const k of Object.keys(window.__uiNodes)) delete window.__uiNodes[k];
+      }
     });
   }
 
